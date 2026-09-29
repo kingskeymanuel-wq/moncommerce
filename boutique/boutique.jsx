@@ -1,0 +1,880 @@
+import React, { useState, useEffect, useMemo, useCallback, useRef, useContext, createContext } from "react";
+import { createRoot } from "react-dom/client";
+import { createPortal } from "react-dom";
+import {
+  ShoppingBag, ShoppingCart, Search, X, Plus, Minus, Trash2, ArrowLeft, ArrowRight, Check, CheckCircle2, Clock,
+  Truck, PackageCheck, XCircle, Phone, MapPin, Mail, MessageSquare, ShieldCheck, Smartphone, CreditCard, Banknote,
+  Copy, Download, Printer, AlertCircle, AlertTriangle, Info, Receipt, Store, User, ChevronRight, Loader2, Sparkles, Package,
+} from "lucide-react";
+import { fmt, fmtNum, lignesTicket, telechargerTicketPdf, genererQr, cheminQr, lienTicket, telInternational } from "/partage/ticket.js";
+
+/* =====================================================================
+   MonCommerce — boutique en ligne (site client)
+   Toutes les données viennent de l'API /api/boutique : produits, prix et
+   stock réels, commandes enregistrées dans la même base que l'administration.
+   ===================================================================== */
+
+const API = (window.MONCOMMERCE_API_URL || "").replace(/\/$/, "");
+const PANIER_KEY = "boutique-panier";
+const COMMANDES_KEY = "boutique-mes-commandes";
+const CLIENT_KEY = "boutique-client";
+
+const cx = (...a) => a.filter(Boolean).join(" ");
+const norm = (s) => (s || "").toString().normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const lire = (k, def) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : def; } catch { return def; } };
+const ecrire = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* stockage indisponible */ } };
+const urlImage = (img) => (img && img.startsWith("/uploads/") ? API + img : img);
+const fmtDate = (iso) => new Date(iso).toLocaleString("fr-FR", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+
+async function api(methode, chemin, corps) {
+  let res;
+  try {
+    res = await fetch(API + chemin, { method: methode, headers: { "Content-Type": "application/json" }, body: corps ? JSON.stringify(corps) : undefined });
+  } catch {
+    throw Object.assign(new Error("Connexion impossible. Vérifiez votre accès Internet et réessayez."), { statut: 0 });
+  }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(json.erreur || `Erreur ${res.status}`), { statut: res.status, details: json });
+  return json;
+}
+
+/* Moyens de paiement : apparence (couleurs des opérateurs) */
+const OPERATEURS = {
+  "Orange Money": { couleur: "#ff7900", sigle: "OM" },
+  "MTN MoMo": { couleur: "#ffcb05", sigle: "MTN", texte: "#1a1a1a" },
+  "Moov Money": { couleur: "#0066b3", sigle: "MV" },
+  "Wave": { couleur: "#1dc8ff", sigle: "W" },
+};
+const LogoOperateur = ({ mode, taille = 28 }) => {
+  const o = OPERATEURS[mode] || { couleur: "#8a8a8a", sigle: "?" };
+  return <span className="pay-logo" style={{ background: o.couleur, color: o.texte || "#fff", width: taille, height: taille, fontSize: taille * 0.36 }}>{o.sigle}</span>;
+};
+
+/* =====================================================================
+   État global : configuration, catalogue, panier, navigation, toasts
+   ===================================================================== */
+const Ctx = createContext(null);
+const useBoutique = () => useContext(Ctx);
+
+function parseHash() {
+  const h = location.hash.replace(/^#\/?/, "");
+  const [page = "", id = null] = h.split("?")[0].split("/").filter(Boolean);
+  return { page, id: id ? decodeURIComponent(id) : null };
+}
+function useRoute() {
+  const [r, setR] = useState(parseHash);
+  useEffect(() => { const f = () => { setR(parseHash()); window.scrollTo({ top: 0 }); }; addEventListener("hashchange", f); return () => removeEventListener("hashchange", f); }, []);
+  const go = useCallback((page, id) => { location.hash = "/" + (page || "") + (id ? "/" + encodeURIComponent(id) : ""); }, []);
+  return [r, go];
+}
+
+/* =====================================================================
+   Composants de base
+   ===================================================================== */
+function Btn({ children, variant = "secondary", size, icon: Icon, iconRight: IconR, loading, full, className, ...rest }) {
+  return (
+    <button type="button" {...rest} disabled={rest.disabled || loading}
+      className={cx("btn", `btn-${variant}`, size && `btn-${size}`, full && "btn-full", !children && "btn-icon", loading && "is-loading", className)}>
+      {loading && <span className="spinner" />}
+      {Icon && <Icon size={size === "sm" ? 14 : 16} strokeWidth={2.2} />}
+      {children && <span>{children}</span>}
+      {IconR && <IconR size={16} strokeWidth={2.2} />}
+    </button>
+  );
+}
+const Badge = ({ tone = "neutral", children, dot }) => <span className={cx("badge", `badge-${tone}`)}>{dot && <span className="badge-dot" />}{children}</span>;
+function Field({ label, error, help, children, optional, className }) {
+  return (
+    <div className={cx("field", error && "has-error", className)}>
+      <label className="label">{label}{optional && <span className="optional"> (facultatif)</span>}</label>
+      {children}
+      {error ? <div className="field-error"><AlertCircle size={14} />{error}</div> : help ? <div className="help">{help}</div> : null}
+    </div>
+  );
+}
+function Input({ icon: Icon, suffix, size, className, ...rest }) {
+  return (
+    <div className={cx("input-wrap", size === "lg" && "input-lg", className)}>
+      {Icon && <Icon size={16} className="input-icon" />}
+      <input className="input" {...rest} />
+      {suffix && <span className="input-affix">{suffix}</span>}
+    </div>
+  );
+}
+function Stepper({ value, onChange, min = 1, max = 99 }) {
+  return (
+    <div className="stepper">
+      <button type="button" onClick={() => onChange(Math.max(min, value - 1))} disabled={value <= min} aria-label="Diminuer"><Minus size={14} /></button>
+      <input value={value} inputMode="numeric" aria-label="Quantité" onChange={(e) => { const n = parseInt(e.target.value.replace(/\D/g, ""), 10); onChange(Math.min(max, Math.max(min, isNaN(n) ? min : n))); }} />
+      <button type="button" onClick={() => onChange(Math.min(max, value + 1))} disabled={value >= max} aria-label="Augmenter"><Plus size={14} /></button>
+    </div>
+  );
+}
+const ImageProduit = ({ p, className }) => (p?.image
+  ? <img className={cx("img-produit", className)} src={urlImage(p.image)} alt={p.nom} loading="lazy" />
+  : <div className={cx("img-produit img-vide", `tint-${p?.teinte ?? 6}`, className)}><span>{p?.emoji || "📦"}</span></div>);
+
+function Toasts({ items, fermer }) {
+  return createPortal(
+    <div className="toasts" role="status" aria-live="polite">
+      {items.map((t) => (
+        <div key={t.id} className={cx("toast", t.ton && `toast-${t.ton}`)}>
+          {t.ton === "critical" ? <AlertCircle size={18} className="toast-icon" /> : <CheckCircle2 size={18} className="toast-icon" />}
+          <div className="toast-text"><strong>{t.titre}</strong>{t.desc && <span>{t.desc}</span>}</div>
+          {t.action && <button className="toast-action" onClick={() => { t.action.onClick(); fermer(t.id); }}>{t.action.label}</button>}
+          <button className="toast-close" onClick={() => fermer(t.id)} aria-label="Fermer"><X size={15} /></button>
+        </div>
+      ))}
+    </div>,
+    document.body,
+  );
+}
+
+/* =====================================================================
+   En-tête, pied de page
+   ===================================================================== */
+function BandeauInfo() {
+  const { config } = useBoutique();
+  const l = config.livraison;
+  const msg = !config.ouverte
+    ? "La boutique ne prend pas de commandes pour le moment."
+    : l.gratuite_des > 0 ? `Livraison offerte dès ${fmt(l.gratuite_des)} d'achat${l.zone ? " · " + l.zone : ""}`
+    : l.zone ? `Livraison : ${l.zone}` : "Paiement à la livraison ou par Mobile Money";
+  return <div className={cx("annonce", !config.ouverte && "fermee")}>{msg}</div>;
+}
+
+function EnTete() {
+  const { config, nbArticles, ouvrirPanier, recherche, setRecherche, go, route, bump } = useBoutique();
+  const [chercher, setChercher] = useState(false);
+  return (
+    <header className="v-header">
+      <div className="v-header-in">
+        <a href="#/" className="v-logo" onClick={() => setRecherche("")}>
+          <span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span>
+          <span className="truncate">{config.boutique.nom}</span>
+        </a>
+        <div className={cx("v-search", chercher && "ouvert")}>
+          <Search size={16} className="input-icon" />
+          <input value={recherche} onChange={(e) => { setRecherche(e.target.value); if (route.page) go(""); }} placeholder="Rechercher un produit…" aria-label="Rechercher" />
+          {recherche && <button className="input-clear" onClick={() => setRecherche("")} aria-label="Effacer"><X size={13} /></button>}
+        </div>
+        <nav className="v-actions">
+          <button className="v-icon only-mobile" onClick={() => setChercher((c) => !c)} aria-label="Rechercher"><Search size={20} /></button>
+          <a href="#/mes-commandes" className="v-lien hide-sm"><Receipt size={17} />Mes commandes</a>
+          <button className={cx("v-icon v-panier", bump && "bump")} onClick={ouvrirPanier} aria-label={`Panier, ${nbArticles} article(s)`}>
+            <ShoppingCart size={21} />
+            {nbArticles > 0 && <span className="v-compteur">{nbArticles}</span>}
+          </button>
+        </nav>
+      </div>
+    </header>
+  );
+}
+
+function PiedDePage() {
+  const { config } = useBoutique();
+  const b = config.boutique;
+  const modes = [...config.paiements.transfert.map((t) => t.mode)];
+  return (
+    <footer className="v-footer">
+      <div className="v-footer-in">
+        <div>
+          <div className="v-logo"><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span>{b.nom}</div>
+          {b.slogan && <p className="muted" style={{ marginTop: 8 }}>{b.slogan}</p>}
+        </div>
+        <div className="stack-sm" hidden={!b.adresse && !b.telephone && !b.whatsapp}>
+          <div className="strong">Nous contacter</div>
+          {b.adresse && <div className="row muted"><MapPin size={14} />{b.adresse}</div>}
+          {b.telephone && <a className="row" href={`tel:${b.telephone.replace(/\s/g, "")}`}><Phone size={14} />{b.telephone}</a>}
+          {b.whatsapp && <a className="row" href={`https://wa.me/${telInternational(b.whatsapp)}`} target="_blank" rel="noopener"><MessageSquare size={14} />WhatsApp</a>}
+        </div>
+        <div className="stack-sm">
+          <div className="strong">Paiements acceptés</div>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <span className="chip-pay"><Banknote size={14} />À la livraison</span>
+            {modes.map((m) => <span key={m} className="chip-pay"><LogoOperateur mode={m} taille={18} />{m}</span>)}
+            {config.paiements.en_ligne && <span className="chip-pay"><CreditCard size={14} />Paiement en ligne</span>}
+          </div>
+        </div>
+      </div>
+      <div className="v-footer-bas">
+        <span>© {new Date().getFullYear()} {b.nom}</span>
+        <a href="/admin/">Espace vendeur</a>
+      </div>
+    </footer>
+  );
+}
+
+/* =====================================================================
+   Accueil : bannière + catalogue
+   ===================================================================== */
+function CarteProduit({ p, i }) {
+  const { ajouter, go, quantiteDans } = useBoutique();
+  const dansPanier = quantiteDans(p.id);
+  return (
+    <article className="v-carte" style={{ "--i": i }}>
+      <a href={`#/produit/${encodeURIComponent(p.id)}`} className="v-carte-media">
+        <ImageProduit p={p} />
+        {!p.disponible && <span className="v-etiquette epuise">Épuisé</span>}
+        {p.disponible && p.stock <= 5 && <span className="v-etiquette">Plus que {p.stock}</span>}
+      </a>
+      <div className="v-carte-corps">
+        <a href={`#/produit/${encodeURIComponent(p.id)}`} className="v-carte-nom">{p.nom}</a>
+        {p.description && <p className="v-carte-desc">{p.description}</p>}
+        <div className="v-carte-bas">
+          <span className="v-prix">{fmt(p.prix)}</span>
+          <Btn size="sm" variant={dansPanier ? "secondary" : "primary"} icon={dansPanier ? Check : Plus} disabled={!p.disponible || dansPanier >= p.stock}
+            onClick={() => ajouter(p, 1)}>{dansPanier ? `${dansPanier} au panier` : "Ajouter"}</Btn>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function PageAccueil() {
+  const { config, produits, recherche, setRecherche } = useBoutique();
+  const [tri, setTri] = useState("nouveautes");
+  const [dispo, setDispo] = useState(false);
+  const catalogueRef = useRef(null);
+  const liste = useMemo(() => {
+    let l = produits.filter((p) => (!dispo || p.disponible) && norm(p.nom + " " + p.description).includes(norm(recherche)));
+    if (tri === "prix-asc") l = [...l].sort((a, b) => a.prix - b.prix);
+    if (tri === "prix-desc") l = [...l].sort((a, b) => b.prix - a.prix);
+    if (tri === "populaires") l = [...l].sort((a, b) => b.ventes - a.ventes);
+    // Les produits épuisés passent en fin de liste
+    return [...l.filter((p) => p.disponible), ...l.filter((p) => !p.disponible)];
+  }, [produits, recherche, tri, dispo]);
+  const b = config.boutique;
+
+  return (
+    <>
+      {!recherche && (
+        <section className="v-hero">
+          <div className="v-hero-in">
+            <span className="v-hero-tag"><Sparkles size={14} />Commandez en ligne</span>
+            <h1>{b.slogan || `Bienvenue chez ${b.nom}`}</h1>
+            <p>{config.livraison.zone ? `Livraison ${config.livraison.zone}. ` : ""}Payez à la livraison ou par Mobile Money{config.paiements.en_ligne ? ", en toute sécurité" : ""}.</p>
+            <div className="row" style={{ flexWrap: "wrap", gap: 10 }}>
+              <Btn variant="brand" size="lg" iconRight={ArrowRight} onClick={() => catalogueRef.current?.scrollIntoView({ behavior: "smooth" })}>Voir les produits</Btn>
+              {b.whatsapp && <a className="btn btn-secondary btn-lg" href={`https://wa.me/${telInternational(b.whatsapp)}`} target="_blank" rel="noopener"><MessageSquare size={16} /><span>Nous écrire</span></a>}
+            </div>
+          </div>
+          <div className="v-garanties">
+            <div><Truck size={20} /><span><b>Livraison</b>{config.livraison.frais ? ` ${fmt(config.livraison.frais)}` : " offerte"}{config.livraison.gratuite_des > 0 ? `, offerte dès ${fmt(config.livraison.gratuite_des)}` : ""}</span></div>
+            <div><Smartphone size={20} /><span><b>Mobile Money</b> Orange, MTN, Moov, Wave</span></div>
+            <div><Banknote size={20} /><span><b>Paiement à la livraison</b> en espèces</span></div>
+            <div><Receipt size={20} /><span><b>Ticket de caisse</b> téléchargeable</span></div>
+          </div>
+        </section>
+      )}
+
+      <section className="v-section" ref={catalogueRef}>
+        <div className="v-section-tete">
+          <h2>{recherche ? `Résultats pour « ${recherche} »` : "Nos produits"}</h2>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <label className="checkbox"><input type="checkbox" checked={dispo} onChange={(e) => setDispo(e.target.checked)} /><span className="checkbox-box"><Check size={12} strokeWidth={3} /></span><span>En stock uniquement</span></label>
+            <div className="select-wrap">
+              <select className="select" value={tri} onChange={(e) => setTri(e.target.value)} aria-label="Trier">
+                <option value="nouveautes">Nouveautés</option>
+                <option value="populaires">Meilleures ventes</option>
+                <option value="prix-asc">Prix croissant</option>
+                <option value="prix-desc">Prix décroissant</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        {liste.length === 0 ? (
+          <div className="empty"><div className="empty-icon"><Search size={26} /></div><h3>Aucun produit trouvé</h3><p>{recherche ? "Essayez un autre mot." : "Le catalogue sera bientôt disponible."}</p>{recherche && <Btn onClick={() => setRecherche("")}>Voir tous les produits</Btn>}</div>
+        ) : (
+          <div className="v-grille">{liste.map((p, i) => <CarteProduit key={p.id} p={p} i={i} />)}</div>
+        )}
+      </section>
+    </>
+  );
+}
+
+/* =====================================================================
+   Fiche produit
+   ===================================================================== */
+function PageProduit({ id }) {
+  const { produits, ajouter, quantiteDans, go, ouvrirPanier, config } = useBoutique();
+  const p = produits.find((x) => x.id === id);
+  const [qte, setQte] = useState(1);
+  if (!p) return <div className="v-section"><div className="empty"><div className="empty-icon"><Package size={26} /></div><h3>Produit introuvable</h3><p>Il a peut-être été retiré du catalogue.</p><Btn variant="primary" onClick={() => go("")}>Retour à la boutique</Btn></div></div>;
+  const dejaPris = quantiteDans(p.id);
+  const restant = Math.max(0, p.stock - dejaPris);
+  const autres = produits.filter((x) => x.id !== p.id && x.disponible).slice(0, 4);
+  return (
+    <div className="v-section">
+      <button className="v-retour" onClick={() => history.length > 1 ? history.back() : go("")}><ArrowLeft size={16} />Retour</button>
+      <div className="v-fiche">
+        <div className="v-fiche-media"><ImageProduit p={p} /></div>
+        <div className="v-fiche-infos">
+          <h1>{p.nom}</h1>
+          <div className="v-fiche-prix">{fmt(p.prix)}</div>
+          {p.disponible ? (
+            <Badge tone={p.stock <= 5 ? "warning" : "success"} dot>{p.stock <= 5 ? `Plus que ${p.stock} en stock` : "En stock"}</Badge>
+          ) : <Badge tone="critical" dot>Épuisé</Badge>}
+          {p.description && <p className="v-fiche-desc">{p.description}</p>}
+          {p.disponible && config.ouverte && (
+            <div className="stack-sm" style={{ marginTop: 8 }}>
+              <div className="row" style={{ gap: 12 }}>
+                <Stepper value={Math.min(qte, Math.max(1, restant))} onChange={setQte} max={Math.max(1, restant)} />
+                {dejaPris > 0 && <span className="subtle">{dejaPris} déjà dans votre panier</span>}
+              </div>
+              <div className="row" style={{ flexWrap: "wrap" }}>
+                <Btn variant="primary" size="lg" icon={ShoppingCart} disabled={restant <= 0} onClick={() => { ajouter(p, Math.min(qte, restant)); setQte(1); }}>Ajouter au panier</Btn>
+                <Btn variant="brand" size="lg" disabled={restant <= 0 && dejaPris === 0} onClick={() => { if (restant > 0) ajouter(p, Math.min(qte, restant), true); go("commander"); }}>Acheter maintenant</Btn>
+              </div>
+            </div>
+          )}
+          <ul className="v-rassurance">
+            <li><Truck size={16} />Livraison {config.livraison.zone || "à domicile"}{config.livraison.frais ? ` · ${fmt(config.livraison.frais)}` : ""}</li>
+            <li><Banknote size={16} />Paiement à la livraison possible</li>
+            <li><Smartphone size={16} />Orange Money, MTN MoMo, Moov Money, Wave</li>
+            <li><Receipt size={16} />Ticket de caisse téléchargeable après l'achat</li>
+          </ul>
+        </div>
+      </div>
+      {autres.length > 0 && (
+        <>
+          <h2 className="v-sous-titre">Vous aimerez aussi</h2>
+          <div className="v-grille">{autres.map((x, i) => <CarteProduit key={x.id} p={x} i={i} />)}</div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* =====================================================================
+   Panier (tiroir latéral)
+   ===================================================================== */
+function calculTotaux(lignes, config) {
+  const sousTotal = lignes.reduce((s, l) => s + l.p.prix * l.quantite, 0);
+  const l = config.livraison;
+  const frais = lignes.length === 0 ? 0 : l.gratuite_des > 0 && sousTotal >= l.gratuite_des ? 0 : l.frais;
+  return { sousTotal, frais, total: sousTotal + frais, manquePourGratuite: l.gratuite_des > 0 && l.frais > 0 ? Math.max(0, l.gratuite_des - sousTotal) : 0 };
+}
+
+function TiroirPanier() {
+  const { panierOuvert, fermerPanier, lignes, changerQuantite, retirer, config, go } = useBoutique();
+  const [monte, setMonte] = useState(panierOuvert);
+  const [ferme, setFerme] = useState(false);
+  useEffect(() => {
+    if (panierOuvert) { setMonte(true); setFerme(false); return; }
+    if (!monte) return;
+    setFerme(true);
+    const t = setTimeout(() => { setMonte(false); setFerme(false); }, 220);
+    return () => clearTimeout(t);
+  }, [panierOuvert]);
+  useEffect(() => {
+    if (!panierOuvert) return;
+    const h = (e) => e.key === "Escape" && fermerPanier();
+    addEventListener("keydown", h);
+    return () => removeEventListener("keydown", h);
+  }, [panierOuvert]);
+  if (!monte) return null;
+  const t = calculTotaux(lignes, config);
+  return createPortal(
+    <div className={cx("overlay v-tiroir-overlay", ferme && "closing")}>
+      <div className="backdrop" onMouseDown={fermerPanier} />
+      <aside className="v-tiroir" role="dialog" aria-label="Panier">
+        <div className="modal-head"><h2>Votre panier</h2><button className="icon-btn" onClick={fermerPanier} aria-label="Fermer"><X size={18} /></button></div>
+        {lignes.length === 0 ? (
+          <div className="empty" style={{ flex: 1 }}>
+            <div className="empty-icon"><ShoppingCart size={26} /></div>
+            <h3>Votre panier est vide</h3>
+            <p>Parcourez le catalogue et ajoutez vos articles.</p>
+            <Btn variant="primary" onClick={() => { fermerPanier(); go(""); }}>Continuer mes achats</Btn>
+          </div>
+        ) : (
+          <>
+            <div className="v-tiroir-lignes">
+              {t.manquePourGratuite > 0 && (
+                <div className="v-gratuite">
+                  <span>Plus que <b>{fmt(t.manquePourGratuite)}</b> pour la livraison offerte</span>
+                  <div className="progress"><span style={{ width: `${Math.min(100, (t.sousTotal / config.livraison.gratuite_des) * 100)}%` }} /></div>
+                </div>
+              )}
+              {lignes.map(({ p, quantite }) => (
+                <div key={p.id} className="v-ligne">
+                  <a href={`#/produit/${encodeURIComponent(p.id)}`} onClick={fermerPanier}><ImageProduit p={p} className="mini" /></a>
+                  <div className="grow">
+                    <div className="strong">{p.nom}</div>
+                    <div className="subtle num">{fmt(p.prix)}</div>
+                    <div className="row" style={{ marginTop: 6 }}>
+                      <Stepper value={quantite} onChange={(q) => changerQuantite(p.id, q)} max={Math.max(1, p.stock)} />
+                      <button className="icon-btn danger" onClick={() => retirer(p.id)} aria-label="Retirer"><Trash2 size={15} /></button>
+                    </div>
+                  </div>
+                  <div className="num strong">{fmt(p.prix * quantite)}</div>
+                </div>
+              ))}
+            </div>
+            <div className="v-tiroir-pied">
+              <div className="summary-line"><span>Sous-total</span><span className="num">{fmt(t.sousTotal)}</span></div>
+              <div className="summary-line"><span>Livraison</span><span className="num">{t.frais ? fmt(t.frais) : "Offerte"}</span></div>
+              <div className="summary-total"><span className="strong">Total</span><strong>{fmt(t.total)}</strong></div>
+              <Btn variant="brand" size="lg" full iconRight={ArrowRight} disabled={!config.ouverte} onClick={() => { fermerPanier(); go("commander"); }}>
+                {config.ouverte ? "Passer la commande" : "Commandes fermées"}
+              </Btn>
+            </div>
+          </>
+        )}
+      </aside>
+    </div>,
+    document.body,
+  );
+}
+
+/* =====================================================================
+   Commande : coordonnées, livraison, paiement
+   ===================================================================== */
+function PageCommander() {
+  const { lignes, config, go, viderPanier, recharger, toast, synchroniserPanier } = useBoutique();
+  const memo = lire(CLIENT_KEY, {});
+  const [c, setC] = useState({ nom: memo.nom || "", telephone: memo.telephone || "", email: memo.email || "", adresse: memo.adresse || "", ville: memo.ville || "", instructions: "" });
+  const modes = [
+    { cle: "livraison", titre: "Paiement à la livraison", desc: "Payez en espèces ou par Mobile Money au livreur.", icone: Banknote },
+    ...(config.paiements.transfert.length ? [{ cle: "transfert", titre: "Transfert Mobile Money", desc: "Envoyez le montant sur notre numéro, puis indiquez la référence.", icone: Smartphone }] : []),
+    ...(config.paiements.en_ligne ? [{ cle: "en_ligne", titre: "Payer en ligne maintenant", desc: "Orange Money, MTN MoMo, Moov Money, Wave via CinetPay.", icone: CreditCard }] : []),
+  ];
+  const [mode, setMode] = useState(modes[0].cle);
+  const [op, setOp] = useState(config.paiements.transfert[0]?.mode || "");
+  const [tr, setTr] = useState({ telephone: memo.telephone || "", reference: "" });
+  const [err, setErr] = useState({});
+  const [envoi, setEnvoi] = useState(false);
+  const [erreurGlobale, setErreurGlobale] = useState("");
+  const t = calculTotaux(lignes, config);
+  const set = (k, v) => { setC((x) => ({ ...x, [k]: v })); setErr((e) => ({ ...e, [k]: null })); };
+  const operateur = config.paiements.transfert.find((o) => o.mode === op);
+
+  if (lignes.length === 0) {
+    return <div className="v-section"><div className="empty"><div className="empty-icon"><ShoppingCart size={26} /></div><h3>Votre panier est vide</h3><Btn variant="primary" onClick={() => go("")}>Voir les produits</Btn></div></div>;
+  }
+
+  const valider = async (e) => {
+    e.preventDefault();
+    const x = {};
+    if (c.nom.trim().length < 2) x.nom = "Indiquez votre nom complet.";
+    if (c.telephone.replace(/\D/g, "").length < 8) x.telephone = "Numéro de téléphone invalide.";
+    if (c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) x.email = "Adresse e-mail invalide.";
+    if (mode === "en_ligne" && !c.email) x.email = "Obligatoire pour le paiement en ligne.";
+    if (c.adresse.trim().length < 3) x.adresse = "Indiquez le quartier, la rue ou un repère.";
+    if (mode === "transfert") {
+      if (tr.telephone.replace(/\D/g, "").length < 8) x.trTel = `Numéro ${op} qui a envoyé l'argent.`;
+      if (tr.reference.trim().length < 4) x.trRef = "ID de transaction reçu par SMS.";
+    }
+    setErr(x);
+    if (Object.keys(x).length) { document.querySelector(".has-error")?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+    setEnvoi(true); setErreurGlobale("");
+    ecrire(CLIENT_KEY, { nom: c.nom, telephone: c.telephone, email: c.email, adresse: c.adresse, ville: c.ville });
+    try {
+      const r = await api("POST", "/api/boutique/commandes", {
+        client: c,
+        lignes: lignes.map((l) => ({ pack_id: l.p.id, quantite: l.quantite })),
+        paiement: mode === "transfert" ? { mode, operateur: op, telephone: tr.telephone, reference: tr.reference } : { mode },
+      });
+      ecrire(COMMANDES_KEY, [{ jeton: r.jeton, numero: r.numero, date: new Date().toISOString() }, ...lire(COMMANDES_KEY, []).filter((o) => o.jeton !== r.jeton)].slice(0, 30));
+      viderPanier();
+      recharger();
+      if (r.redirection) { location.href = r.redirection; return; }
+      sessionStorage.setItem("boutique-nouvelle", r.jeton);
+      go("commande", r.jeton);
+    } catch (e2) {
+      setEnvoi(false);
+      if (e2.details?.indisponibles) {
+        await recharger();
+        synchroniserPanier(e2.details.indisponibles);
+        toast({ titre: "Panier mis à jour", desc: e2.message, ton: "critical" });
+      }
+      setErreurGlobale(e2.message);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  return (
+    <form className="v-section v-checkout" onSubmit={valider} noValidate>
+      <div className="v-checkout-form">
+        <button type="button" className="v-retour" onClick={() => go("")}><ArrowLeft size={16} />Continuer mes achats</button>
+        <h1 className="v-titre">Finaliser la commande</h1>
+        {erreurGlobale && <div className="banner banner-critical"><AlertCircle size={16} /><div>{erreurGlobale}</div></div>}
+
+        <section className="card v-etape">
+          <h2><span className="n">1</span>Vos coordonnées</h2>
+          <div className="form-grid">
+            <Field label="Nom complet" error={err.nom} className="full"><Input icon={User} value={c.nom} onChange={(e) => set("nom", e.target.value)} autoComplete="name" placeholder="Ex : Aïcha Koné" /></Field>
+            <Field label="Téléphone" error={err.telephone} help="Le livreur vous appellera sur ce numéro."><Input icon={Phone} value={c.telephone} onChange={(e) => set("telephone", e.target.value)} inputMode="tel" autoComplete="tel" placeholder="07 00 00 00 00" /></Field>
+            <Field label="E-mail" optional={mode !== "en_ligne"} error={err.email}><Input icon={Mail} value={c.email} onChange={(e) => set("email", e.target.value)} inputMode="email" autoComplete="email" placeholder="vous@exemple.com" /></Field>
+          </div>
+        </section>
+
+        <section className="card v-etape">
+          <h2><span className="n">2</span>Livraison</h2>
+          <div className="form-grid">
+            <Field label="Adresse de livraison" error={err.adresse} className="full" help="Quartier, rue, point de repère."><Input icon={MapPin} value={c.adresse} onChange={(e) => set("adresse", e.target.value)} autoComplete="street-address" placeholder="Ex : Angré 8e tranche, près de la pharmacie" /></Field>
+            <Field label="Ville / commune" optional><Input value={c.ville} onChange={(e) => set("ville", e.target.value)} autoComplete="address-level2" placeholder="Ex : Cocody, Abidjan" /></Field>
+            <Field label="Instructions" optional><Input value={c.instructions} onChange={(e) => set("instructions", e.target.value)} placeholder="Ex : appeler avant de passer" /></Field>
+          </div>
+          {config.livraison.zone && <p className="subtle" style={{ marginTop: 10 }}><Truck size={13} style={{ verticalAlign: -2 }} /> {config.livraison.zone}</p>}
+        </section>
+
+        <section className="card v-etape">
+          <h2><span className="n">3</span>Paiement</h2>
+          <div className="v-modes">
+            {modes.map((m) => (
+              <label key={m.cle} className={cx("v-mode", mode === m.cle && "actif")}>
+                <input type="radio" name="mode" checked={mode === m.cle} onChange={() => setMode(m.cle)} />
+                <span className="v-mode-radio" />
+                <m.icone size={20} />
+                <span className="grow"><b>{m.titre}</b><small>{m.desc}</small></span>
+              </label>
+            ))}
+          </div>
+
+          {mode === "transfert" && operateur && (
+            <div className="pay-detail" style={{ marginTop: 12 }}>
+              <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
+                {config.paiements.transfert.map((o) => (
+                  <button type="button" key={o.mode} className={cx("pay-opt v-op", op === o.mode && "selected")} onClick={() => setOp(o.mode)}><LogoOperateur mode={o.mode} taille={24} /><span>{o.mode}</span></button>
+                ))}
+              </div>
+              <ol className="v-instructions">
+                <li>Envoyez <b className="num">{fmt(t.total)}</b> par <b>{operateur.mode}</b> au <b className="num">{operateur.numero}</b> <button type="button" className="link" onClick={() => navigator.clipboard?.writeText(operateur.numero.replace(/\s/g, "")).then(() => toast({ titre: "Numéro copié" }))}><Copy size={12} /> copier</button><br /><span className="subtle">Titulaire : {operateur.titulaire}</span></li>
+                <li>Notez l'<b>ID de transaction</b> indiqué dans le SMS de confirmation.</li>
+                <li>Renseignez-le ci-dessous : nous vérifions la réception puis confirmons votre commande.</li>
+              </ol>
+              <div className="form-grid">
+                <Field label={`Numéro ${operateur.mode} utilisé`} error={err.trTel}><Input icon={Phone} value={tr.telephone} onChange={(e) => { setTr((x) => ({ ...x, telephone: e.target.value })); setErr((z) => ({ ...z, trTel: null })); }} inputMode="tel" placeholder="07 00 00 00 00" /></Field>
+                <Field label="ID de transaction" error={err.trRef}><Input value={tr.reference} onChange={(e) => { setTr((x) => ({ ...x, reference: e.target.value })); setErr((z) => ({ ...z, trRef: null })); }} placeholder="Ex : MP240929.1234.A5678" /></Field>
+              </div>
+            </div>
+          )}
+          {mode === "en_ligne" && (
+            <div className="banner banner-info" style={{ marginTop: 12 }}><ShieldCheck size={16} /><div>Vous serez redirigé vers la page de paiement sécurisée CinetPay. Votre commande est confirmée automatiquement dès le paiement validé.{config.paiements.en_ligne_test && <><br /><b>Mode test : aucun débit réel.</b></>}</div></div>
+          )}
+          {mode === "livraison" && (
+            <div className="banner banner-success" style={{ marginTop: 12 }}><Banknote size={16} /><div>Vous paierez <b className="num">{fmt(t.total)}</b> à la réception de votre commande.</div></div>
+          )}
+        </section>
+      </div>
+
+      <aside className="v-recap card">
+        <h2 className="card-title">Récapitulatif</h2>
+        <div className="stack-sm" style={{ marginTop: 12 }}>
+          {lignes.map(({ p, quantite }) => (
+            <div key={p.id} className="row" style={{ gap: 10 }}>
+              <span className="v-recap-img"><ImageProduit p={p} className="mini" /><span className="v-recap-q">{quantite}</span></span>
+              <span className="grow truncate">{p.nom}</span>
+              <span className="num">{fmt(p.prix * quantite)}</span>
+            </div>
+          ))}
+        </div>
+        <div className="stack-sm" style={{ marginTop: 14 }}>
+          <div className="summary-line"><span>Sous-total</span><span className="num">{fmt(t.sousTotal)}</span></div>
+          <div className="summary-line"><span>Livraison</span><span className="num">{t.frais ? fmt(t.frais) : "Offerte"}</span></div>
+          <div className="summary-total"><span className="strong">Total</span><strong>{fmt(t.total)}</strong></div>
+          <Btn type="submit" variant="brand" size="lg" full loading={envoi} icon={mode === "en_ligne" ? CreditCard : CheckCircle2}>
+            {mode === "en_ligne" ? `Payer ${fmt(t.total)}` : "Confirmer la commande"}
+          </Btn>
+          <p className="subtle" style={{ textAlign: "center" }}>Prix et disponibilités vérifiés à la validation.</p>
+        </div>
+      </aside>
+    </form>
+  );
+}
+
+/* =====================================================================
+   Suivi de commande + ticket
+   ===================================================================== */
+function useQr(texte) {
+  const [qr, setQr] = useState(null);
+  useEffect(() => { let ok = true; if (texte) genererQr(texte).then((q) => ok && setQr(q)).catch(() => {}); return () => { ok = false; }; }, [texte]);
+  return qr;
+}
+function QrCode({ texte, taille = 112 }) {
+  const qr = useQr(texte);
+  if (!qr) return <div className="qr-attente" style={{ width: taille, height: taille }}><span className="spinner" /></div>;
+  const n = qr.getModuleCount();
+  return <svg className="qr" width={taille} height={taille} viewBox={`-2 -2 ${n + 4} ${n + 4}`} shapeRendering="crispEdges" role="img" aria-label="QR code du ticket"><rect x="-2" y="-2" width={n + 4} height={n + 4} fill="#fff" /><path d={cheminQr(qr)} fill="#000" /></svg>;
+}
+function TicketCaisse({ t }) {
+  return (
+    <div className="receipt-wrap">
+      <div className="receipt">
+        {lignesTicket(t).map((l, i) => {
+          if (l.k === "titre") return <h3 key={i}>{l.txt}</h3>;
+          if (l.k === "centre") return <div key={i} className="r-center" style={l.gras ? { fontWeight: 700, color: "#1f2124", marginTop: 2 } : null}>{l.txt}</div>;
+          if (l.k === "sep") return <div key={i} className="r-sep" />;
+          if (l.k === "texte") return <div key={i} className="r-row"><span style={{ fontWeight: 600 }}>{l.txt}</span></div>;
+          if (l.k === "badge") return <div key={i} className="r-badge">{l.txt}</div>;
+          return <div key={i} className={cx("r-row", l.grand && "r-total")}><span>{l.g}</span><span>{l.d}</span></div>;
+        })}
+        {t.lien && <div className="r-qr"><QrCode texte={t.lien} /><div>Scannez pour retrouver<br />votre ticket</div></div>}
+        <div className="r-center" style={{ marginTop: 8 }}>{t.boutique?.message || "Merci pour votre achat !"}</div>
+      </div>
+    </div>
+  );
+}
+function ActionsTicket({ t }) {
+  const { toast } = useBoutique();
+  const [pdf, setPdf] = useState(false);
+  return (
+    <div className="ticket-actions">
+      {createPortal(<div className="print-zone"><TicketCaisse t={t} /></div>, document.body)}
+      <Btn icon={Download} loading={pdf} onClick={async () => { setPdf(true); try { await telechargerTicketPdf(t); } catch (e) { toast({ titre: "Téléchargement impossible", desc: e.message, ton: "critical" }); } setPdf(false); }}>Télécharger (PDF)</Btn>
+      <Btn icon={Printer} onClick={() => window.print()}>Imprimer</Btn>
+      {t.lien && <Btn icon={Copy} onClick={() => navigator.clipboard?.writeText(t.lien).then(() => toast({ titre: "Lien copié" }))}>Copier le lien</Btn>}
+    </div>
+  );
+}
+
+const ETAPES = [
+  { k: "en_attente", label: "Reçue", icon: Receipt },
+  { k: "confirmee", label: "Confirmée", icon: CheckCircle2 },
+  { k: "expediee", label: "En livraison", icon: Truck },
+  { k: "livree", label: "Livrée", icon: PackageCheck },
+];
+
+function PageSuivi({ jeton, ticketSeul }) {
+  const { toast, config } = useBoutique();
+  const [c, setC] = useState(null);
+  const [err, setErr] = useState("");
+  const nouvelle = useMemo(() => sessionStorage.getItem("boutique-nouvelle") === jeton, [jeton]);
+  const charger = useCallback(() => api("GET", `/api/boutique/commandes/${encodeURIComponent(jeton)}`).then((r) => { setC(r); setErr(""); }).catch((e) => setErr(e.statut === 404 ? "Cette commande est introuvable. Vérifiez le lien." : e.message)), [jeton]);
+  useEffect(() => { charger(); }, [charger]);
+  // Paiement en ligne en cours : on interroge régulièrement ; sinon, rafraîchissement lent du suivi
+  useEffect(() => {
+    if (!c) return;
+    const t = setInterval(charger, c.paiement?.statut === "en_cours" ? 5000 : 30000);
+    return () => clearInterval(t);
+  }, [c?.paiement?.statut, charger]);
+  // Message de remerciement : une seule fois, juste après la commande
+  useEffect(() => { if (nouvelle) sessionStorage.removeItem("boutique-nouvelle"); }, []);
+
+  if (err) return <div className="v-section"><div className="empty"><div className="empty-icon"><Receipt size={26} /></div><h3>Commande introuvable</h3><p>{err}</p><a className="btn btn-primary" href="#/">Retour à la boutique</a></div></div>;
+  if (!c) return <div className="v-section v-chargement"><span className="spinner" /></div>;
+
+  const ticket = { ...c, lien: lienTicket(c.jeton) };
+  if (ticketSeul) {
+    return (
+      <div className="v-section v-etroit">
+        <h1 className="v-titre" style={{ textAlign: "center" }}>Ticket de caisse</h1>
+        <p className="muted" style={{ textAlign: "center", marginBottom: 16 }}>Merci pour votre achat ! Téléchargez ou imprimez votre ticket.</p>
+        <TicketCaisse t={ticket} />
+        <ActionsTicket t={ticket} />
+      </div>
+    );
+  }
+
+  const annulee = c.statut === "annulee";
+  const idx = ETAPES.findIndex((e) => e.k === c.statut);
+  const sp = c.paiement?.statut;
+  const quand = (k) => c.etapes.filter((e) => e.type === "statut" && e.statut === k).pop()?.cree_le;
+  return (
+    <div className="v-section v-suivi">
+      <div className="v-suivi-tete">
+        {nouvelle && !annulee ? (
+          <>
+            <svg className="check-anim" viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="38" /><path d="M26 43 l11 11 l21 -23" /></svg>
+            <h1>Merci {c.client ? c.client.split(" ")[0] : ""} !</h1>
+            <p className="muted">Votre commande <b>{c.numero}</b> est enregistrée. Conservez cette page : elle vous permet de suivre votre commande.</p>
+          </>
+        ) : (
+          <>
+            <h1>Commande {c.numero}</h1>
+            <p className="muted">Passée le {fmtDate(c.date)}</p>
+          </>
+        )}
+      </div>
+
+      {/* État du paiement */}
+      {!annulee && sp === "en_cours" && (
+        <div className="banner banner-info"><Loader2 size={16} className="tourne" /><div><b>Paiement en ligne en attente de validation.</b> Validez l'opération sur votre téléphone si vous y êtes invité ; cette page se met à jour automatiquement.{c.reprendre_paiement && <><br /><a className="link" href={c.reprendre_paiement}>Reprendre le paiement</a></>}</div></div>
+      )}
+      {!annulee && sp === "a_verifier" && (
+        <div className="banner banner-warning"><Clock size={16} /><div><b>Paiement en cours de vérification.</b> Nous contrôlons la réception de votre transfert {c.paiement.mode} (réf. {c.paiement.reference}) et confirmons votre commande au plus vite.</div></div>
+      )}
+      {!annulee && sp === "en_attente" && (
+        <div className="banner banner-success"><Banknote size={16} /><div>À régler à la livraison : <b className="num">{fmt(c.total)}</b>, en espèces ou par Mobile Money.</div></div>
+      )}
+      {!annulee && sp === "payee" && (
+        <div className="banner banner-success"><CheckCircle2 size={16} /><div><b>Paiement reçu</b>{c.paiement.mode ? ` (${c.paiement.mode})` : ""}. Merci !</div></div>
+      )}
+      {annulee && (
+        <div className="banner banner-critical"><XCircle size={16} /><div><b>Commande annulée.</b> {sp === "echoue" ? "Le paiement en ligne n'a pas abouti : aucun montant n'a été débité par la boutique. Vous pouvez repasser commande." : "Contactez-nous pour toute question."}</div></div>
+      )}
+
+      <div className="v-suivi-grille">
+        <div className="stack">
+          {!annulee && (
+            <section className="card card-body">
+              <div className="card-title" style={{ marginBottom: 14 }}>Suivi</div>
+              <div className="steps">
+                {ETAPES.map((e, i) => (
+                  <div key={e.k} className={cx("step", i <= idx && "done", i === idx && "current")}>
+                    <div className="step-dot">{i < idx ? <Check size={15} strokeWidth={3} /> : <e.icon size={15} />}</div>
+                    <div className="step-label">{e.label}</div>
+                    {quand(e.k) && <div className="subtle" style={{ fontSize: 11 }}>{new Date(quand(e.k)).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}</div>}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+          <section className="card card-body">
+            <div className="card-title" style={{ marginBottom: 10 }}>Articles</div>
+            {c.lignes.map((l, i) => (
+              <div key={i} className="row" style={{ gap: 12, padding: "8px 0", borderTop: i ? "1px solid var(--divider)" : 0 }}>
+                <ImageProduit p={l} className="mini" />
+                <div className="grow"><div className="strong">{l.nom}</div><div className="subtle num">{l.quantite} × {fmt(l.prix_unitaire)}</div></div>
+                <div className="num strong">{fmt(l.total)}</div>
+              </div>
+            ))}
+            <div className="stack-sm" style={{ marginTop: 10 }}>
+              <div className="summary-line"><span>Sous-total</span><span className="num">{fmt(c.sous_total)}</span></div>
+              <div className="summary-line"><span>Livraison</span><span className="num">{c.frais_livraison ? fmt(c.frais_livraison) : "Offerte"}</span></div>
+              <div className="summary-total"><span className="strong">Total</span><strong>{fmt(c.total)}</strong></div>
+            </div>
+          </section>
+        </div>
+        <div className="stack">
+          <section className="card card-body stack-sm">
+            <div className="card-title">Livraison</div>
+            <div className="row muted" style={{ alignItems: "flex-start" }}><MapPin size={15} style={{ marginTop: 2 }} /><span>{c.adresse_livraison || "—"}</span></div>
+            {(c.contact.whatsapp || c.contact.telephone) && <div className="pop-sep" style={{ margin: "6px 0" }} />}
+            {c.contact.whatsapp && <a className="btn btn-secondary" href={`https://wa.me/${telInternational(c.contact.whatsapp)}?text=${encodeURIComponent(`Bonjour, au sujet de ma commande ${c.numero}`)}`} target="_blank" rel="noopener"><MessageSquare size={16} /><span>Question sur ma commande</span></a>}
+            {!c.contact.whatsapp && c.contact.telephone && <a className="btn btn-secondary" href={`tel:${c.contact.telephone.replace(/\s/g, "")}`}><Phone size={16} /><span>Appeler la boutique</span></a>}
+          </section>
+          <section className="card card-body">
+            <div className="card-title" style={{ marginBottom: 10 }}>Ticket de caisse</div>
+            <details className="ticket-apercu" open={sp === "payee"}><summary>Afficher le ticket</summary><TicketCaisse t={ticket} /></details>
+            <div style={{ marginTop: 10 }}><ActionsTicket t={ticket} /></div>
+          </section>
+        </div>
+      </div>
+      <div className="row" style={{ justifyContent: "center", marginTop: 24 }}><a className="btn btn-secondary" href="#/"><ArrowLeft size={16} /><span>Retour à la boutique</span></a></div>
+    </div>
+  );
+}
+
+function PageMesCommandes() {
+  const [liste, setListe] = useState(null);
+  useEffect(() => {
+    const mes = lire(COMMANDES_KEY, []);
+    Promise.all(mes.map((o) => api("GET", `/api/boutique/commandes/${encodeURIComponent(o.jeton)}`).then((r) => ({ ...o, r })).catch(() => null)))
+      .then((l) => setListe(l.filter(Boolean)));
+  }, []);
+  const statutTxt = { en_attente: "Reçue", confirmee: "Confirmée", expediee: "En livraison", livree: "Livrée", annulee: "Annulée" };
+  const ton = { livree: "success", annulee: "critical", expediee: "magic", confirmee: "info", en_attente: "warning" };
+  return (
+    <div className="v-section v-etroit">
+      <h1 className="v-titre">Mes commandes</h1>
+      <p className="muted" style={{ marginBottom: 16 }}>Les commandes passées depuis cet appareil.</p>
+      {!liste ? <div className="v-chargement"><span className="spinner" /></div> : liste.length === 0 ? (
+        <div className="empty"><div className="empty-icon"><Receipt size={26} /></div><h3>Aucune commande</h3><p>Vos commandes apparaîtront ici.</p><a className="btn btn-primary" href="#/">Découvrir la boutique</a></div>
+      ) : (
+        <div className="card">
+          {liste.map((o, i) => (
+            <a key={o.jeton} className="list-item" href={`#/commande/${o.jeton}`} style={{ animation: `fadeUp .35s ${i * 40}ms var(--ease-out) both` }}>
+              <ImageProduit p={o.r.lignes[0]} className="mini" />
+              <div className="grow">
+                <div className="row-between"><span className="strong">{o.r.numero}</span><span className="num strong">{fmt(o.r.total)}</span></div>
+                <div className="row-between"><span className="subtle">{fmtDate(o.r.date)} · {o.r.lignes.reduce((s, l) => s + l.quantite, 0)} article(s)</span><Badge tone={ton[o.r.statut]} dot>{statutTxt[o.r.statut]}</Badge></div>
+              </div>
+              <ChevronRight size={16} className="muted" />
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* =====================================================================
+   Application
+   ===================================================================== */
+function App() {
+  const [route, go] = useRoute();
+  const [config, setConfig] = useState(null);
+  const [produits, setProduits] = useState([]);
+  const [erreur, setErreur] = useState("");
+  const [panier, setPanier] = useState(() => lire(PANIER_KEY, []));
+  const [panierOuvert, setPanierOuvert] = useState(false);
+  const [recherche, setRecherche] = useState("");
+  const [toasts, setToasts] = useState([]);
+  const [bump, setBump] = useState(false);
+
+  const toast = useCallback((t) => {
+    const id = Math.random().toString(36).slice(2);
+    setToasts((s) => [...s.slice(-2), { ...t, id }]);
+    setTimeout(() => setToasts((s) => s.filter((x) => x.id !== id)), t.duree || 3800);
+  }, []);
+  const fermerToast = useCallback((id) => setToasts((s) => s.filter((x) => x.id !== id)), []);
+
+  const recharger = useCallback(async () => {
+    const [c, p] = await Promise.all([api("GET", "/api/boutique/config"), api("GET", "/api/boutique/produits")]);
+    setConfig(c); setProduits(p);
+    document.title = c.boutique.nom + (c.boutique.slogan ? " — " + c.boutique.slogan : "");
+    return p;
+  }, []);
+  useEffect(() => { recharger().catch((e) => setErreur(e.message)); }, []);
+  // Stock et prix à jour quand le client revient sur l'onglet
+  useEffect(() => { const h = () => document.visibilityState === "visible" && recharger().catch(() => {}); document.addEventListener("visibilitychange", h); return () => document.removeEventListener("visibilitychange", h); }, []);
+  useEffect(() => { ecrire(PANIER_KEY, panier); }, [panier]);
+
+  // Lignes du panier avec les données produit à jour (produit retiré → ligne ignorée)
+  const lignes = useMemo(() => panier.map((l) => ({ p: produits.find((p) => p.id === l.id), quantite: l.quantite })).filter((l) => l.p && l.p.disponible)
+    .map((l) => ({ ...l, quantite: Math.min(l.quantite, l.p.stock) })), [panier, produits]);
+  const nbArticles = lignes.reduce((s, l) => s + l.quantite, 0);
+  const quantiteDans = (id) => panier.find((l) => l.id === id)?.quantite || 0;
+
+  const ajouter = (p, q, silencieux) => {
+    setPanier((s) => {
+      const actuel = s.find((l) => l.id === p.id)?.quantite || 0;
+      const nouvelle = Math.min(p.stock, actuel + q);
+      return actuel ? s.map((l) => (l.id === p.id ? { ...l, quantite: nouvelle } : l)) : [...s, { id: p.id, quantite: nouvelle }];
+    });
+    setBump(true); setTimeout(() => setBump(false), 450);
+    if (!silencieux) toast({ titre: "Ajouté au panier", desc: `${q} × ${p.nom}`, action: { label: "Voir le panier", onClick: () => setPanierOuvert(true) } });
+  };
+  const changerQuantite = (id, q) => setPanier((s) => s.map((l) => (l.id === id ? { ...l, quantite: q } : l)));
+  const retirer = (id) => setPanier((s) => s.filter((l) => l.id !== id));
+  const viderPanier = () => setPanier([]);
+  const synchroniserPanier = (indispo) => setPanier((s) => s.map((l) => { const x = indispo.find((i) => i.pack_id === l.id); return x ? { ...l, quantite: x.disponible } : l; }).filter((l) => l.quantite > 0));
+
+  if (erreur) return <div className="splash"><div className="empty"><div className="empty-icon"><AlertTriangle size={26} /></div><h3>Boutique momentanément indisponible</h3><p>{erreur}</p><Btn variant="primary" onClick={() => location.reload()}>Réessayer</Btn></div></div>;
+  if (!config) return <div className="splash"><span className="brand-mark splash-mark"><ShoppingBag size={22} strokeWidth={2.4} /></span><span className="spinner" /></div>;
+
+  const ctx = {
+    config, produits, route, go, lignes, nbArticles, quantiteDans, ajouter, changerQuantite, retirer, viderPanier, synchroniserPanier, recharger,
+    panierOuvert, ouvrirPanier: () => setPanierOuvert(true), fermerPanier: () => setPanierOuvert(false), recherche, setRecherche, toast, bump,
+  };
+
+  let page;
+  switch (route.page) {
+    case "produit": page = <PageProduit id={route.id} />; break;
+    case "commander": page = <PageCommander />; break;
+    case "commande": page = <PageSuivi jeton={route.id} key={route.id} />; break;
+    case "recu": page = <PageSuivi jeton={route.id} key={"r" + route.id} ticketSeul />; break;
+    case "mes-commandes": page = <PageMesCommandes />; break;
+    default: page = <PageAccueil />;
+  }
+
+  return (
+    <Ctx.Provider value={ctx}>
+      <BandeauInfo />
+      <EnTete />
+      <main className="v-main" key={route.page + (route.id || "")}>{page}</main>
+      <PiedDePage />
+      <TiroirPanier />
+      {nbArticles > 0 && route.page !== "commander" && (
+        <button className="v-barre-panier only-mobile" onClick={() => setPanierOuvert(true)}>
+          <ShoppingCart size={18} /><span>{nbArticles} article{nbArticles > 1 ? "s" : ""}</span><b className="num">{fmt(calculTotaux(lignes, config).sousTotal)}</b><ArrowRight size={16} />
+        </button>
+      )}
+      <Toasts items={toasts} fermer={fermerToast} />
+    </Ctx.Provider>
+  );
+}
+
+createRoot(document.getElementById("root")).render(<App />);

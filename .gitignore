@@ -1,0 +1,11 @@
+# Dépendances et secrets
+node_modules/
+.env
+
+# Données locales (base SQLite et photos) — jamais dans le dépôt
+backend/db/*.db
+backend/db/*.db-*
+backend/uploads/
+
+# Éditeur
+.idea/

@@ -1,0 +1,128 @@
+const express = require("express");
+const { nanoid } = require("nanoid");
+const db = require("../db");
+const { adminOnly } = require("../middleware/auth");
+const { versIso, idOuNouveau } = require("../lib/outils");
+const { lireBoutique, ecrireBoutique } = require("./parametres");
+const { resoudreImage } = require("../lib/images");
+const router = express.Router();
+
+/**
+ * GET /api/donnees — l'ensemble des données de la boutique en un seul appel.
+ * Utilisé par l'interface d'administration, qui calcule ensuite ses
+ * indicateurs localement (volume adapté à un commerce de proximité).
+ * Les clients et produits supprimés logiquement sont exclus ; leurs ventes
+ * restent visibles (affichées « client supprimé » / « produit supprimé »).
+ */
+router.get("/", (req, res) => {
+  res.json({
+    clients: db.prepare("SELECT * FROM clients WHERE supprime = 0 ORDER BY cree_le").all().map((c) => ({ ...c, cree_le: versIso(c.cree_le) })),
+    packs: db.prepare("SELECT * FROM packs WHERE supprime = 0 ORDER BY cree_le").all().map((p) => ({ ...p, cree_le: versIso(p.cree_le) })),
+    ventes: db
+      .prepare("SELECT v.*, u.nom AS vendeur_nom FROM ventes v LEFT JOIN utilisateurs u ON u.id = v.vendeur_id ORDER BY v.date_vente")
+      .all()
+      .map((v) => ({ ...v, date_vente: versIso(v.date_vente), paye_le: versIso(v.paye_le) })),
+    commandes: db.prepare("SELECT * FROM commandes").all().map((c) => ({ ...c, maj_le: versIso(c.maj_le) })),
+    evenements: db
+      .prepare("SELECT id, commande_id, type, statut, texte, cree_le FROM commande_evenements ORDER BY cree_le")
+      .all()
+      .map((e) => ({ ...e, cree_le: versIso(e.cree_le) })),
+    investissements: db.prepare("SELECT * FROM investissements ORDER BY date_invest DESC").all(),
+    boutique: lireBoutique(),
+  });
+});
+
+/**
+ * POST /api/donnees/import — remplace TOUTES les données métier (pas les
+ * comptes utilisateurs) par celles fournies. Réservé aux administrateurs.
+ * Corps : { clients, packs, ventes, commandes, evenements, investissements }
+ * (mêmes champs que GET /api/donnees).
+ */
+router.post("/import", adminOnly, (req, res) => {
+  const d = req.body || {};
+  for (const k of ["clients", "packs", "ventes", "commandes", "investissements"]) {
+    if (!Array.isArray(d[k])) return res.status(400).json({ erreur: `Champ « ${k} » manquant ou invalide` });
+  }
+  const maintenant = new Date().toISOString();
+
+  try {
+    db.transaction(() => {
+      db.exec("DELETE FROM paiements_en_ligne; DELETE FROM commande_evenements; DELETE FROM commandes; DELETE FROM ventes; DELETE FROM packs; DELETE FROM clients; DELETE FROM investissements;");
+
+      const insClient = db.prepare("INSERT INTO clients (id, nom, telephone, email, ville, statut, notes, supprime, cree_le) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+      const insPack = db.prepare("INSERT INTO packs (id, nom, description, prix, cout, stock, sku, emoji, teinte, actif, supprime, cree_le, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+      const clientIds = new Set();
+      const packIds = new Set();
+
+      for (const c of d.clients) {
+        const id = idOuNouveau(c.id);
+        insClient.run(id, c.nom || "Sans nom", c.telephone || "", c.email || null, c.ville || null, c.statut === "VIP" ? "VIP" : "Standard", c.notes || null, c.supprime ? 1 : 0, c.cree_le || maintenant);
+        clientIds.add(id);
+      }
+      for (const p of d.packs) {
+        const id = idOuNouveau(p.id);
+        let image = null;
+        try { image = resoudreImage(p.image, null, id); } catch { /* image illisible : ignorée */ }
+        insPack.run(id, p.nom || "Produit", p.description || "", Number(p.prix) || 0, p.cout == null ? null : Number(p.cout), Math.max(0, Math.round(Number(p.stock) || 0)),
+          p.sku || null, p.emoji || "📦", Number(p.teinte) || 0, p.actif === 0 || p.actif === false ? 0 : 1, p.supprime ? 1 : 0, p.cree_le || maintenant, image);
+        packIds.add(id);
+      }
+
+      // Ventes rattachées à un client / produit absent : on crée une fiche
+      // « supprimée » pour conserver l'historique sans casser les clés étrangères.
+      const insVente = db.prepare(
+        `INSERT INTO ventes (id, commande_id, client_id, pack_id, quantite, prix_unitaire, mode_paiement, statut_paiement, montant_recu,
+           reference_paiement, telephone_paiement, paye_le, date_vente) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      const venteIds = new Set();
+      for (const v of d.ventes) {
+        if (!clientIds.has(v.client_id)) { const id = idOuNouveau(v.client_id); insClient.run(id, "Client supprimé", "", null, null, "Standard", null, 1, maintenant); clientIds.add(id); v.client_id = id; }
+        if (!packIds.has(v.pack_id)) { const id = idOuNouveau(v.pack_id); insPack.run(id, "Produit supprimé", "", Number(v.prix_unitaire) || 0, null, 0, null, "📦", 6, 0, 1, maintenant, null); packIds.add(id); v.pack_id = id; }
+        const id = idOuNouveau(v.id);
+        const statutPaiement = ["en_attente", "a_verifier", "en_cours", "echoue"].includes(v.statut_paiement) ? v.statut_paiement : "payee";
+        insVente.run(id, v.commande_id || null, v.client_id, v.pack_id, Math.max(1, Math.round(Number(v.quantite) || 1)), Number(v.prix_unitaire) || 0, v.mode_paiement || "Espèces",
+          statutPaiement, v.montant_recu ?? null, v.reference_paiement || null, v.telephone_paiement || null,
+          statutPaiement === "payee" ? v.paye_le || v.date_vente || maintenant : null, v.date_vente || maintenant);
+        venteIds.add(id);
+      }
+
+      const insCmd = db.prepare(
+        `INSERT INTO commandes (id, vente_id, numero, statut, adresse_livraison, note, jeton_recu, maj_le, canal, frais_livraison, contact_telephone, contact_email)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      const cmdIds = new Set();
+      const numeros = new Set();
+      for (const c of d.commandes) {
+        if (!venteIds.has(c.vente_id) || numeros.has(c.numero)) continue;
+        const id = idOuNouveau(c.id);
+        const jeton = typeof c.jeton_recu === "string" && /^[A-Za-z0-9_-]{16,64}$/.test(c.jeton_recu) ? c.jeton_recu : nanoid(24);
+        insCmd.run(id, c.vente_id, c.numero, c.statut || "en_attente", c.adresse_livraison || "", c.note || null, jeton, c.maj_le || maintenant,
+          c.canal === "en_ligne" ? "en_ligne" : "boutique", Number(c.frais_livraison) || 0, c.contact_telephone || null, c.contact_email || null);
+        cmdIds.add(id);
+        numeros.add(c.numero);
+      }
+
+      // Lignes sans commande explicite : rattachées à la commande qui les référence (données v1–v3)
+      db.exec("UPDATE ventes SET commande_id = (SELECT c.id FROM commandes c WHERE c.vente_id = ventes.id) WHERE commande_id IS NULL");
+
+      const insEvt = db.prepare("INSERT INTO commande_evenements (id, commande_id, type, statut, texte, cree_le) VALUES (?, ?, ?, ?, ?, ?)");
+      for (const e of d.evenements || []) {
+        if (!cmdIds.has(e.commande_id)) continue;
+        insEvt.run(nanoid(), e.commande_id, ["note", "paiement"].includes(e.type) ? e.type : "statut", e.statut || null, e.texte || null, e.cree_le || maintenant);
+      }
+
+      const insInv = db.prepare("INSERT INTO investissements (id, libelle, categorie, montant, date_invest) VALUES (?, ?, ?, ?, ?)");
+      for (const i of d.investissements) {
+        insInv.run(idOuNouveau(i.id), i.libelle || "Dépense", i.categorie || "Autre", Number(i.montant) || 0, String(i.date_invest || maintenant).slice(0, 10));
+      }
+      if (d.boutique && typeof d.boutique === "object") ecrireBoutique(d.boutique);
+    })();
+  } catch (e) {
+    console.error(e);
+    return res.status(400).json({ erreur: "Import impossible : données incohérentes (" + e.message + ")" });
+  }
+
+  res.json({ message: "Données importées" });
+});
+
+module.exports = router;

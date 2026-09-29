@@ -1,0 +1,32 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #E9E4D8;
+  font-family: 'Inter', sans-serif;
+}
+
+#root {
+  display: flex;
+  justify-content: center;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #5A648299;
+}
+
+select {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
