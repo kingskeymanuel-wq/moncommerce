@@ -103,13 +103,27 @@ L'intégration suit l'API CinetPay v1 du SDK officiel
 Si l'administration est ouverte sans serveur, elle propose un **mode démo**
 dont les données restent dans le navigateur.
 
-## 4. Mise en ligne
+## 4. Mise en ligne (Render)
 
-Pour que vos clients accèdent à la boutique depuis Internet, hébergez le
-dossier complet sur un serveur Node.js (VPS, Render, Railway…) derrière un nom
-de domaine en HTTPS, avec `NODE_ENV=production` et `PUBLIC_URL` renseignés.
-Sauvegardez régulièrement `backend/db/moncommerce.db` et `backend/uploads/`
-(photos des produits).
+Le fichier `render.yaml` décrit tout le déploiement : instance `0.5c-512mb`
+(région Francfort), disque persistant de 1 Go monté sur `/var/data` pour la
+base (`DB_PATH`) et les photos (`UPLOADS_DIR`), secrets `JWT_SECRET` et
+`CODE_INSTALLATION` générés automatiquement.
+
+1. Sur [render.com](https://render.com), créez un compte en vous connectant
+   avec GitHub et ajoutez un moyen de paiement (le disque exige une instance
+   payante).
+2. **New → Blueprint**, choisissez le dépôt `moncommerce`, puis **Apply**.
+3. Une fois le déploiement terminé, ouvrez le service → **Environment** et
+   copiez la valeur de `CODE_INSTALLATION`.
+4. Ouvrez `https://<votre-service>.onrender.com/admin/` et créez le compte
+   administrateur avec ce code (sans lui, personne ne peut créer le premier compte).
+5. Facultatif : nom de domaine personnalisé (service → **Settings → Custom
+   Domains**, puis renseignez `PUBLIC_URL`), clés CinetPay dans **Environment**.
+
+Chaque `git push` sur `main` redéploie automatiquement. Les données sont sur le
+disque et ne sont pas touchées par les redéploiements. Pensez à télécharger
+régulièrement une sauvegarde depuis *Paramètres → Données*.
 
 Toutes les routes de l'API sont documentées dans `backend/README.md`.
 L'ancienne interface (v1) est conservée dans `frontend-v1-sauvegarde/`.
