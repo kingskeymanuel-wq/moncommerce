@@ -14,6 +14,14 @@ function enrichir(vente) {
   return { ...vente, date_vente: versIso(vente.date_vente), total: vente.quantite * vente.prix_unitaire, client, pack, commande };
 }
 
+// Un vendeur ne voit et ne modifie que ses propres ventes
+const aMoi = (vente, req) => req.user?.role === "admin" || vente.vendeur_id === req.user?.id;
+router.param("id", (req, res, next, id) => {
+  const v = db.prepare("SELECT vendeur_id FROM ventes WHERE id = ?").get(id);
+  if (v && !aMoi(v, req)) return res.status(403).json({ erreur: "Cette vente appartient à un autre vendeur" });
+  next();
+});
+
 // GET /api/ventes?clientId=&dateDebut=&dateFin=
 router.get("/", (req, res) => {
   const { clientId, dateDebut, dateFin } = req.query;
@@ -23,7 +31,7 @@ router.get("/", (req, res) => {
   if (dateDebut) { sql += " AND date_vente >= ?"; params.push(dateDebut); }
   if (dateFin) { sql += " AND date_vente <= ?"; params.push(dateFin); }
   sql += " ORDER BY date_vente DESC";
-  res.json(db.prepare(sql).all(...params).map(enrichir));
+  res.json(db.prepare(sql).all(...params).filter((v) => aMoi(v, req)).map(enrichir));
 });
 
 // GET /api/ventes/:id

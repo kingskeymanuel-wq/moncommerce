@@ -11,6 +11,7 @@ import {
   Printer, Copy, RotateCcw, ShoppingBag, LayoutGrid, List, AlertCircle, AlertTriangle, Info, Sparkles,
   CreditCard, Smartphone, Banknote, TrendingUp, Inbox, UserPlus, User, MessageSquare, Store, Wallet,
   Boxes, Megaphone, Percent, Send, History, ClipboardList, PackagePlus, PackageMinus, CalendarClock, FileText, Gift,
+  UserCheck, Link2, KeyRound, ExternalLink,
 } from "lucide-react";
 import { lignesTicket, telechargerTicketPdf, urlTicketPdf, pdfIntegrable, telInternational, genererQr, cheminQr, lienTicket } from "../partage/ticket.js";
 
@@ -355,7 +356,7 @@ function depuisServeur(p) {
   const ventes = p.ventes.map((v) => {
     const d = new Date(v.date_vente);
     return {
-      id: v.id, commandeId: v.commande_id || null, clientId: v.client_id, packId: v.pack_id, qte: v.quantite, prixUnitaire: v.prix_unitaire, date: isoDate(d), heure: hhmm(d),
+      id: v.id, commandeId: v.commande_id || null, clientId: v.client_id, packId: v.pack_id, vendeurId: v.vendeur_id || null, qte: v.quantite, prixUnitaire: v.prix_unitaire, date: isoDate(d), heure: hhmm(d),
       paiement: v.mode_paiement, statutPaiement: v.statut_paiement || "payee", montantRecu: v.montant_recu ?? null,
       telPaiement: v.telephone_paiement || "", reference: v.reference_paiement || "", payeLe: v.paye_le || null, vendeur: v.vendeur_nom || "",
     };
@@ -363,6 +364,9 @@ function depuisServeur(p) {
   const venteDate = new Map(p.ventes.map((v) => [v.id, v.date_vente]));
   return {
     role: p.role || "admin",
+    moi: p.moi || null,
+    espace: p.espace || null,
+    equipe: (p.equipe || []).map((u) => ({ id: u.id, nom: u.nom, tel: u.telephone, role: u.role, actif: u.actif !== 0, creeLe: u.cree_le })),
     clients: p.clients.map((c) => ({ id: c.id, nom: c.nom, tel: c.telephone || "", email: c.email || "", ville: c.ville || "", statut: c.statut || "Standard", notes: c.notes || "", dateAjout: isoDate(new Date(c.cree_le)), consentement: !!c.consentement_marketing })),
     packs: p.packs.map((x) => ({ id: x.id, nom: x.nom, desc: x.description || "", prix: x.prix, cout: x.cout ?? null, stock: x.stock, sku: x.sku || "", emoji: x.emoji || "📦", teinte: x.teinte ?? 0, actif: !!x.actif, image: x.image || null,
       contenu: x.contenu || "", prixPromo: x.prix_promo ?? null, promoFin: x.promo_fin || null, seuilAlerte: x.seuil_alerte ?? STOCK_FAIBLE })),
@@ -388,6 +392,8 @@ const packVersServeur = (p) => ({ nom: p.nom, description: p.desc || "", prix: p
 const promoActive = (p) => p?.prixPromo != null && p.prixPromo > 0 && p.prixPromo < p.prix && (!p.promoFin || new Date(p.promoFin) > new Date());
 const prixEffectif = (p) => (promoActive(p) ? p.prixPromo : p?.prix || 0);
 const seuilDe = (p) => p?.seuilAlerte ?? STOCK_FAIBLE;
+/* Adresse publique de la boutique ; avec l'identifiant d'un vendeur, les commandes passées par ce lien lui sont attribuées */
+const lienBoutique = (d, vendeurId) => (d?.espace?.slug ? `${location.origin}/#/boutique/${d.espace.slug}${vendeurId ? "?v=" + vendeurId : ""}` : null);
 const investVersServeur = (i) => ({ libelle: i.libelle, categorie: i.categorie, montant: i.montant, date_invest: i.date });
 
 function versServeur(d) {
@@ -1169,6 +1175,7 @@ const NAV = [
   { key: "stocks", label: "Stocks", icon: Boxes, admin: true, badge: (d) => d.packs.filter((p) => p.actif !== false && p.stock <= seuilDe(p)).length },
   { key: "clients", label: "Clients", icon: Users },
   { key: "ventes", label: "Ventes", icon: Receipt },
+  { key: "vendeurs", label: "Vendeurs", icon: UserCheck, admin: true },
   { key: "marketing", label: "Marketing", icon: Megaphone, admin: true },
   { key: "finances", label: "Finances", icon: Landmark, admin: true },
 ];
@@ -1259,7 +1266,7 @@ function SidebarNav({ onNavigate }) {
       })}
       <div className="nav-spacer" />
       <a href="#/parametres" className={cx("nav-item", route.page === "parametres" && "active")} onClick={onNavigate}><Settings size={18} /><span>Paramètres</span></a>
-      <div className="nav-foot">MonCommerce · v5.0</div>
+      <div className="nav-foot">MonCommerce · v6.0</div>
     </nav>
   );
 }
@@ -2193,7 +2200,7 @@ function EncaisserModal({ open, cmd, onClose }) {
    PAGE : Accueil
    ===================================================================== */
 function PageAccueil() {
-  const { data, settings, go, openSale, mode, auth, remplacerTout, toast } = useApp();
+  const { data, settings, go, openSale, mode, auth, remplacerTout, toast, estAdmin } = useApp();
   const [period, setPeriod] = useState(30);
   const [chargement, setChargement] = useState(null);
   const baseVide = mode === "api" && data.clients.length === 0 && data.packs.length === 0 && data.ventes.length === 0;
@@ -2234,12 +2241,14 @@ function PageAccueil() {
     <>
       <PageHeader
         title={`${hello} 👋`}
-        meta={<>Voici l'activité de <b>{(data.boutique?.nom || "Ma Boutique")}</b> · {fmtDateLong(new Date())}</>}
+        meta={<>{estAdmin ? "Voici l'activité de" : "Voici votre activité chez"} <b>{(data.boutique?.nom || "Ma Boutique")}</b> · {fmtDateLong(new Date())}</>}
         actions={<>
           <Segmented value={period} onChange={setPeriod} options={[{ value: 7, label: "7 jours" }, { value: 30, label: "30 jours" }, { value: 90, label: "90 jours" }]} />
           <Btn variant="primary" icon={Plus} onClick={() => openSale()} className="hide-sm">Nouvelle vente</Btn>
         </>}
       />
+
+      {mode === "api" && <CarteLien />}
 
       {baseVide && (
         <div className="card onboarding" style={{ marginBottom: 16 }}>
@@ -2252,7 +2261,7 @@ function PageAccueil() {
                 {!peutImporter && " Seul un administrateur peut charger des données d'exemple."}
               </p>
               <div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
-                <Btn variant="primary" icon={Plus} onClick={() => go("produits", "nouveau")}>Ajouter un produit</Btn>
+                {peutImporter && <Btn variant="primary" icon={Plus} onClick={() => go("produits", "nouveau")}>Ajouter un produit</Btn>}
                 {peutImporter && local && <Btn icon={Upload} loading={chargement === "local"} onClick={() => demarrer("local")}>Importer les données de ce navigateur</Btn>}
                 {peutImporter && <Btn icon={Sparkles} loading={chargement === "demo"} onClick={() => demarrer("demo")}>Charger des données d'exemple</Btn>}
               </div>
@@ -3125,6 +3134,165 @@ function PageVentes() {
   );
 }
 
+/* ---------- Lien public de la boutique / lien de promotion du vendeur ---------- */
+function CarteLien() {
+  const { data, toast, estAdmin } = useApp();
+  const lien = lienBoutique(data, estAdmin ? null : data.moi);
+  if (!lien) return null;
+  const texte = `Découvrez ${data.boutique?.nom || "notre boutique"} : ${lien}`;
+  const copier = () => navigator.clipboard?.writeText(lien).then(() => toast({ title: "Lien copié" }), () => toast({ title: "Copie impossible", tone: "critical" }));
+  return (
+    <div className="card carte-lien" style={{ marginBottom: 16 }}>
+      <div className="card-body row" style={{ gap: 14, flexWrap: "wrap" }}>
+        <span className="todo-icon tint-0" style={{ width: 44, height: 44, borderRadius: 12 }}><Link2 size={20} /></span>
+        <div className="grow" style={{ minWidth: 220 }}>
+          <div className="strong">{estAdmin ? "Adresse publique de votre boutique" : "Mon lien de promotion"}</div>
+          <div className="subtle">{estAdmin ? "Vos produits actifs apparaissent aussi sur la page d'accueil de la plateforme." : "Partagez-le : chaque commande passée par ce lien vous est attribuée."}</div>
+          <div className="lien-url num">{lien}</div>
+        </div>
+        <div className="row" style={{ flexWrap: "wrap" }}>
+          <Btn icon={Copy} onClick={copier}>Copier</Btn>
+          <Btn icon={MessageSquare} onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(texte)}`, "_blank", "noopener")}>WhatsApp</Btn>
+          <a className="btn btn-secondary" href={lien} target="_blank" rel="noopener"><ExternalLink size={16} /><span>Voir</span></a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =====================================================================
+   PAGE : Vendeurs (administrateur) — comptes de l'espace et suivi de leur activité
+   ===================================================================== */
+function MotDePasseModal({ membre, onClose }) {
+  const { toast } = useApp();
+  const [mdp, setMdp] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setMdp(""); setErr(""); setBusy(false); }, [membre?.id]);
+  const valider = async () => {
+    if (mdp.length < 6) return setErr("6 caractères minimum.");
+    setBusy(true);
+    try { await apiFetch("PATCH", `/api/auth/equipe/${membre.id}`, { mot_de_passe: mdp }); toast({ title: "Mot de passe modifié", desc: `Communiquez-le à ${membre.nom}.` }); onClose(); }
+    catch (e) { setErr(e.message); setBusy(false); }
+  };
+  return (
+    <Modal open={!!membre} onClose={onClose} title={`Nouveau mot de passe — ${membre?.nom || ""}`} size="sm"
+      footer={<><Btn onClick={onClose}>Annuler</Btn><Btn variant="primary" loading={busy} onClick={valider}>Enregistrer</Btn></>}>
+      <Field label="Nouveau mot de passe" error={err} help="6 caractères minimum. L'ancien ne fonctionnera plus."><Input icon={Lock} type="password" value={mdp} onChange={(e) => { setMdp(e.target.value); setErr(""); }} autoComplete="new-password" data-autofocus /></Field>
+    </Modal>
+  );
+}
+
+function PageVendeurs() {
+  const { data, mode, toast, confirm, rafraichir, auth } = useApp();
+  const [ajout, setAjout] = useState(false);
+  const [mdp, setMdp] = useState(null);
+  const [period, setPeriod] = useState(30);
+
+  const stats = useMemo(() => {
+    const depuis = period ? isoDate(addDays(today(), -period)) : "";
+    const m = new Map();
+    for (const c of enrichCommandes(data)) {
+      const id = c.vente?.vendeurId;
+      if (!id || c.statut === "annulee" || (depuis && c.vente.date < depuis)) continue;
+      const o = m.get(id) || { caisse: 0, enLigne: 0, ca: 0, articles: 0, last: "" };
+      if (c.canal === "en_ligne") o.enLigne += 1; else o.caisse += 1;
+      o.ca += c.sousTotal; o.articles += c.articles;
+      if (c.stamp > o.last) o.last = c.stamp;
+      m.set(id, o);
+    }
+    return m;
+  }, [data, period]);
+  const st = (id) => stats.get(id) || { caisse: 0, enLigne: 0, ca: 0, articles: 0, last: "" };
+
+  if (mode !== "api") {
+    return <><PageHeader title="Vendeurs" /><Card><EmptyState icon={UserCheck} title="Disponible avec le serveur">Les comptes vendeurs sont créés une fois connecté au serveur.</EmptyState></Card></>;
+  }
+  const equipe = data.equipe || [];
+  const vendeurs = equipe.filter((u) => u.role === "vendeur");
+  const admins = equipe.filter((u) => u.role === "admin");
+  const total = [...stats.values()].reduce((s, o) => s + o.ca, 0);
+  const caVendeurs = vendeurs.reduce((s, u) => s + st(u.id).ca, 0);
+  const meilleur = [...vendeurs].sort((a, b) => st(b.id).ca - st(a.id).ca)[0];
+
+  const basculer = async (u) => {
+    if (u.actif && !(await confirm({ title: `Désactiver ${u.nom} ?`, message: "Ce vendeur ne pourra plus se connecter. Son historique de ventes est conservé et vous pourrez le réactiver.", confirmLabel: "Désactiver", tone: "critical" }))) return;
+    try { await apiFetch("PATCH", `/api/auth/equipe/${u.id}`, { actif: !u.actif }); toast({ title: u.actif ? `${u.nom} est désactivé` : `${u.nom} est réactivé` }); rafraichir(); }
+    catch (e) { toast({ title: "Modification impossible", desc: e.message, tone: "critical" }); }
+  };
+  const copierLien = (u) => navigator.clipboard?.writeText(lienBoutique(data, u.id)).then(() => toast({ title: "Lien de promotion copié", desc: `Lien de ${u.nom}` }), () => toast({ title: "Copie impossible", tone: "critical" }));
+
+  const kpis = [
+    { label: "Vendeurs actifs", value: vendeurs.filter((u) => u.actif).length, f: fmtNum, icon: UserCheck, tint: 4 },
+    { label: "Ventes des vendeurs", value: caVendeurs, f: fmt, icon: TrendingUp, tint: 0 },
+    { label: "Part du chiffre d'affaires", value: total ? (caVendeurs / total) * 100 : 0, f: pct, icon: Percent, tint: 5 },
+  ];
+  const ligne = (u, i) => {
+    const s = st(u.id);
+    return (
+      <tr key={u.id} style={{ "--i": i, opacity: u.actif ? 1 : 0.55 }}>
+        <td><div className="cell-product"><Avatar name={u.nom} /><div><div className="cell-main">{u.nom}{u.id === data.moi ? " (vous)" : ""}</div><div className="cell-sub">{u.tel}</div></div></div></td>
+        <td className="hide-sm">{!u.actif ? <Badge tone="critical">Désactivé</Badge> : u.role === "admin" ? <Badge tone="info" icon={ShieldCheck}>Administrateur</Badge> : <Badge tone="success" dot>Actif</Badge>}</td>
+        <td className="right num">{s.caisse}</td>
+        <td className="right num">{s.enLigne}</td>
+        <td className="right num strong">{fmt(s.ca)}</td>
+        <td className="hide-md muted">{s.last ? relDay(s.last.slice(0, 10)) : "—"}</td>
+        <td className="right"><span className="row" style={{ gap: 2, justifyContent: "flex-end" }}>
+          <button className="icon-btn" title="Copier son lien de promotion" aria-label={`Copier le lien de ${u.nom}`} onClick={() => copierLien(u)}><Link2 size={15} /></button>
+          {u.id !== data.moi && <button className="icon-btn" title="Changer son mot de passe" aria-label={`Mot de passe de ${u.nom}`} onClick={() => setMdp(u)}><KeyRound size={15} /></button>}
+          {u.id !== data.moi && <button className={cx("icon-btn", u.actif && "danger")} title={u.actif ? "Désactiver" : "Réactiver"} aria-label={u.actif ? `Désactiver ${u.nom}` : `Réactiver ${u.nom}`} onClick={() => basculer(u)}>{u.actif ? <XCircle size={15} /> : <RotateCcw size={15} />}</button>}
+        </span></td>
+      </tr>
+    );
+  };
+
+  return (
+    <>
+      <PageHeader title="Vendeurs" meta="Les vendeurs de votre espace et le suivi de leurs ventes"
+        actions={<>
+          <Segmented value={period} onChange={setPeriod} options={[{ value: 7, label: "7 jours" }, { value: 30, label: "30 jours" }, { value: 0, label: "Tout" }]} />
+          <Btn variant="primary" icon={UserPlus} onClick={() => setAjout(true)}>Ajouter un vendeur</Btn>
+        </>} />
+      <div className="kpi-grid kpi-3 stagger">
+        {kpis.map((k, i) => (
+          <div className="card kpi" key={k.label} style={{ "--i": i }}>
+            <div className="kpi-label"><span className={cx("kpi-dot", `tint-${k.tint}`)}><k.icon size={13} /></span>{k.label}</div>
+            <div className="kpi-value"><CountUp value={k.value} format={k.f} /></div>
+          </div>
+        ))}
+      </div>
+      {meilleur && st(meilleur.id).ca > 0 && <div className="banner banner-success" style={{ marginBottom: 16 }}><Star size={16} /><div>Meilleur vendeur sur la période : <b>{meilleur.nom}</b> avec <b className="num">{fmt(st(meilleur.id).ca)}</b> ({st(meilleur.id).caisse + st(meilleur.id).enLigne} commande{st(meilleur.id).caisse + st(meilleur.id).enLigne > 1 ? "s" : ""}).</div></div>}
+
+      <Card title="Mes vendeurs" sub="Chaque vendeur ne voit que sa propre activité. Les commandes passées par son lien de promotion lui sont attribuées." padded={false}>
+        <div style={{ height: 12 }} />
+        {vendeurs.length === 0 ? (
+          <EmptyState icon={UserCheck} title="Aucun vendeur pour le moment" action={<Btn variant="primary" icon={UserPlus} onClick={() => setAjout(true)}>Ajouter un vendeur</Btn>}>Créez un compte pour chaque vendeur : il se connectera depuis « Mon espace vendeur » sur la page d'accueil.</EmptyState>
+        ) : (
+          <div className="table-scroll">
+            <table className="table">
+              <thead><tr><th>Vendeur</th><th className="hide-sm">Statut</th><th className="right">En caisse</th><th className="right">Via son lien</th><th className="right">Chiffre d'affaires</th><th className="hide-md">Dernière vente</th><th style={{ width: 110 }} /></tr></thead>
+              <tbody key={period}>{[...vendeurs].sort((a, b) => st(b.id).ca - st(a.id).ca).map(ligne)}</tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card title="Administrateurs de cet espace" sub="Pour un espace séparé, chaque personne crée son propre compte administrateur depuis la page d'accueil." padded={false}>
+        <div style={{ height: 12 }} />
+        <div className="table-scroll">
+          <table className="table">
+            <thead><tr><th>Administrateur</th><th className="hide-sm">Statut</th><th className="right">En caisse</th><th className="right">Via son lien</th><th className="right">Chiffre d'affaires</th><th className="hide-md">Dernière vente</th><th style={{ width: 110 }} /></tr></thead>
+            <tbody key={period}>{admins.map(ligne)}</tbody>
+          </table>
+        </div>
+      </Card>
+
+      <EquipeModal open={ajout} onClose={() => setAjout(false)} />
+      <MotDePasseModal membre={mdp} onClose={() => setMdp(null)} />
+    </>
+  );
+}
+
 /* Page réservée à l'administrateur */
 const AccesReserve = () => {
   const { go } = useApp();
@@ -3955,7 +4123,7 @@ function CarteBoutiqueEnLigne({ estAdmin }) {
 }
 
 function EquipeModal({ open, onClose }) {
-  const { toast } = useApp();
+  const { toast, rafraichir } = useApp();
   const [f, setF] = useState({ nom: "", tel: "", mdp: "", role: "vendeur" });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -3967,7 +4135,8 @@ function EquipeModal({ open, onClose }) {
     setBusy(true);
     try {
       await apiFetch("POST", "/api/auth/inscription", { nom: f.nom.trim(), telephone: f.tel, mot_de_passe: f.mdp, role: f.role });
-      toast({ title: "Compte créé", desc: `${f.nom.trim()} peut maintenant se connecter.` });
+      toast({ title: "Compte créé", desc: `${f.nom.trim()} peut maintenant se connecter depuis « Mon espace ».` });
+      rafraichir();
       onClose();
     } catch (e) {
       setErr(e.message);
@@ -3975,15 +4144,16 @@ function EquipeModal({ open, onClose }) {
     }
   };
   return (
-    <Modal open={open} onClose={onClose} title="Ajouter un membre de l'équipe" size="md"
+    <Modal open={open} onClose={onClose} title="Ajouter un vendeur" size="md"
       footer={<><Btn onClick={onClose}>Annuler</Btn><Btn variant="primary" loading={busy} onClick={save}>Créer le compte</Btn></>}>
       <div className="form-grid">
         <Field label="Nom complet" className="full"><Input value={f.nom} onChange={(e) => set("nom", e.target.value)} placeholder="Ex : Awa Bamba" /></Field>
         <Field label="Téléphone"><Input icon={Phone} value={f.tel} onChange={(e) => set("tel", e.target.value)} placeholder="07 00 00 00 00" inputMode="tel" /></Field>
         <Field label="Mot de passe provisoire" help="6 caractères minimum."><Input icon={Lock} type="password" value={f.mdp} onChange={(e) => set("mdp", e.target.value)} autoComplete="new-password" /></Field>
         <Field label="Rôle" className="full">
-          <Segmented full value={f.role} onChange={(v) => set("role", v)} options={[{ value: "vendeur", label: "Vendeur", icon: User }, { value: "admin", label: "Administrateur", icon: ShieldCheck }]} />
+          <Segmented full value={f.role} onChange={(v) => set("role", v)} options={[{ value: "vendeur", label: "Vendeur", icon: User }, { value: "admin", label: "Co-administrateur", icon: ShieldCheck }]} />
         </Field>
+        <div className="full subtle">{f.role === "vendeur" ? "Le vendeur vend vos produits et ne voit que sa propre activité. Vous suivez ses ventes dans la page Vendeurs." : "Un co-administrateur partage VOTRE espace avec tous les droits. Pour un espace séparé, la personne doit créer son propre compte administrateur."}</div>
         {err && <div className="banner banner-critical full"><AlertCircle size={16} />{err}</div>}
       </div>
     </Modal>
@@ -3991,7 +4161,7 @@ function EquipeModal({ open, onClose }) {
 }
 
 function PageParametres() {
-  const { settings, setSettings, data, update, sync, remplacerTout, toast, confirm, logout, auth, mode } = useApp();
+  const { settings, setSettings, data, update, sync, remplacerTout, toast, confirm, logout, auth, mode, go } = useApp();
   const enLigne = mode === "api";
   const estAdmin = !enLigne || auth?.utilisateur?.role === "admin";
   const localDispo = enLigne && !!readJson(STORAGE_KEY);
@@ -4074,7 +4244,7 @@ function PageParametres() {
         </Card>
         {enLigne && estAdmin && (
           <Card title="Équipe" padded={false}>
-            <Row title="Ajouter un membre" sub="Créez un compte vendeur ou administrateur. Il se connectera avec son téléphone, son mot de passe et un code SMS."><Btn icon={UserPlus} onClick={() => setEquipeOpen(true)}>Ajouter</Btn></Row>
+            <Row title="Vendeurs" sub="Créez les comptes de vos vendeurs et suivez leurs ventes."><Btn icon={UserCheck} onClick={() => go("vendeurs")}>Gérer mes vendeurs</Btn><Btn icon={UserPlus} onClick={() => setEquipeOpen(true)}>Ajouter</Btn></Row>
           </Card>
         )}
         <Card title="Données" sub={enLigne ? "Les données sont enregistrées sur le serveur." : "Les données sont enregistrées dans ce navigateur."} padded={false}>
@@ -4119,33 +4289,36 @@ function SkeletonPage() {
    ===================================================================== */
 function AuthScreen({ onSuccess, mode }) {
   const enLigne = mode === "api";
-  const [etape, setEtape] = useState(enLigne ? "chargement" : "connexion"); // chargement | inscription | connexion
+  // « Mon espace » de la page d'accueil : ?espace=vendeur | admin, ?creer=1 pour ouvrir un nouvel espace
+  const params = new URLSearchParams(location.search);
+  const espace = params.get("espace") === "vendeur" ? "vendeur" : "admin";
+  const [etape, setEtape] = useState(enLigne && params.get("creer") ? "inscription" : "connexion"); // inscription | connexion
   const [nom, setNom] = useState("");
+  const [boutique, setBoutique] = useState("");
   const [tel, setTel] = useState("");
   const [mdp, setMdp] = useState("");
   const [mdp2, setMdp2] = useState("");
   const [codeRequis, setCodeRequis] = useState(false);
-  const [codeInstall, setCodeInstall] = useState("");
+  const [code, setCode] = useState("");
   const [voir, setVoir] = useState(false);
   const [erreur, setErreur] = useState("");
   const [errKey, setErrKey] = useState(0);
   const [busy, setBusy] = useState(false);
 
-  // Serveur : au tout premier lancement, on crée le compte administrateur
   useEffect(() => {
     if (!enLigne) return;
-    apiFetch("GET", "/api/auth/etat")
-      .then((r) => { setCodeRequis(!!r.code_installation); setEtape(r.initialise ? "connexion" : "inscription"); })
-      .catch(() => setEtape("connexion"));
+    apiFetch("GET", "/api/auth/etat").then((r) => setCodeRequis(!!r.code_invitation)).catch(() => {});
   }, []);
 
   const fail = (m) => { setErreur(m); setErrKey((k) => k + 1); };
+  const inscription = etape === "inscription";
+  const changer = (e) => { setEtape(e); setErreur(""); };
 
   const valider = async (e) => {
     e.preventDefault();
     setErreur("");
-    const inscription = etape === "inscription";
     if (inscription && !nom.trim()) return fail("Indiquez votre nom.");
+    if (inscription && boutique.trim().length < 2) return fail("Indiquez le nom de votre boutique.");
     if (tel.replace(/\D/g, "").length < 8) return fail("Entrez un numéro de téléphone valide.");
     const min = enLigne ? 6 : 4;
     if (mdp.length < min) return fail(`Le mot de passe doit contenir au moins ${min} caractères.`);
@@ -4160,10 +4333,13 @@ function AuthScreen({ onSuccess, mode }) {
       return;
     }
     try {
-      if (inscription) await apiFetch("POST", "/api/auth/inscription", { nom: nom.trim(), telephone: tel, mot_de_passe: mdp, code_installation: codeInstall.trim() });
-      const r = await apiFetch("POST", "/api/auth/connexion", { telephone: tel, mot_de_passe: mdp });
-      const a = { tel, jeton: r.jeton, utilisateur: r.utilisateur, connecteLe: new Date().toISOString() };
+      // Créer un compte administrateur ouvre un nouvel espace, réservé à cet identifiant
+      const r = inscription
+        ? await apiFetch("POST", "/api/auth/inscription", { nom: nom.trim(), boutique: boutique.trim(), telephone: tel, mot_de_passe: mdp, code_invitation: code.trim() })
+        : await apiFetch("POST", "/api/auth/connexion", { telephone: tel, mot_de_passe: mdp });
+      const a = { tel, jeton: r.jeton, utilisateur: r.utilisateur, boutique: r.boutique, connecteLe: new Date().toISOString() };
       writeJson(AUTH_KEY, a);
+      if (location.search) history.replaceState(null, "", location.pathname + location.hash);
       onSuccess(a);
     } catch (err) {
       setBusy(false);
@@ -4174,12 +4350,12 @@ function AuthScreen({ onSuccess, mode }) {
   return (
     <div className="auth">
       <div className="auth-hero">
-        <div className="brand" style={{ width: "auto" }}><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span>MonCommerce</div>
+        <a className="brand" style={{ width: "auto" }} href="/"><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span>MonCommerce</a>
         <div>
-          <h1>Gérez votre commerce, <em>simplement.</em></h1>
-          <p>Ventes, commandes, clients, stock et finances réunis dans un seul espace, sur ordinateur comme sur mobile.</p>
+          <h1>Votre espace, <em>vos règles.</em></h1>
+          <p>Chaque administrateur dispose de son propre espace : ses produits, ses stocks, ses clients, ses finances et ses vendeurs. Les produits publiés apparaissent sur la page d'accueil de la plateforme.</p>
           <div className="auth-feats">
-            {[[ShoppingCart, "Suivi des commandes de bout en bout"], [Banknote, "Espèces, Orange Money, MTN, Moov, Wave, carte"], [Receipt, "Tickets de caisse imprimés ou téléchargeables"]].map(([I, t], i) => (
+            {[[Store, "Un espace privé par administrateur"], [UserCheck, "Vos vendeurs et le suivi de leurs ventes"], [Receipt, "Tickets de caisse, stocks, promotions, finances"]].map(([I, t], i) => (
               <div key={t} style={{ "--i": i }}><span><I size={14} /></span>{t}</div>
             ))}
           </div>
@@ -4195,33 +4371,37 @@ function AuthScreen({ onSuccess, mode }) {
         <div className="card auth-card">
           <div className="card-body">
             <div className="auth-logo"><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span>MonCommerce</div>
-            {etape === "chargement" ? (
-              <div className="row" style={{ justifyContent: "center", padding: "40px 0" }}><span className="spinner" /></div>
-            ) : (
-              <form onSubmit={valider} className="stack" key={etape} style={{ animation: "fadeUp .35s var(--ease-out)" }}>
-                {etape === "inscription" ? (
-                  <>
-                    <div><h2>Bienvenue 👋</h2><p className="muted" style={{ marginTop: 4 }}>Créez le compte administrateur de votre boutique.</p></div>
-                    <Field label="Votre nom"><Input size="lg" icon={User} value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex : Aïcha Koné" autoComplete="name" autoFocus /></Field>
-                  </>
-                ) : (
-                  <div><h2>Connexion</h2><p className="muted" style={{ marginTop: 4 }}>Accédez à l'administration de votre boutique.</p></div>
-                )}
-                <Field label="Numéro de téléphone"><Input size="lg" icon={Phone} value={tel} onChange={(e) => setTel(e.target.value)} placeholder="07 00 00 00 00" inputMode="tel" autoComplete="tel" autoFocus={etape !== "inscription"} /></Field>
-                <Field label="Mot de passe">
-                  <div className="input-wrap input-lg">
-                    <Lock size={16} className="input-icon" />
-                    <input className="input" type={voir ? "text" : "password"} value={mdp} onChange={(e) => setMdp(e.target.value)} placeholder="••••••••" autoComplete={etape === "inscription" ? "new-password" : "current-password"} />
-                    <button type="button" className="icon-btn" style={{ marginRight: 4 }} onClick={() => setVoir((v) => !v)} aria-label={voir ? "Masquer" : "Afficher"}>{voir ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-                  </div>
-                </Field>
-                {etape === "inscription" && codeRequis && <Field label="Code d'installation" help="Affiché dans votre hébergeur (variable CODE_INSTALLATION). Il protège la création du premier compte."><Input size="lg" icon={ShieldCheck} value={codeInstall} onChange={(e) => setCodeInstall(e.target.value)} autoComplete="off" /></Field>}
-                {etape === "inscription" && <Field label="Confirmez le mot de passe" help="6 caractères minimum."><Input size="lg" icon={Lock} type={voir ? "text" : "password"} value={mdp2} onChange={(e) => setMdp2(e.target.value)} placeholder="••••••••" autoComplete="new-password" /></Field>}
-                {erreur && <div className="banner banner-critical" key={errKey}><AlertCircle size={16} />{erreur}</div>}
-                <Btn type="submit" variant="primary" size="lg" full loading={busy}>{etape === "inscription" ? "Créer le compte" : "Se connecter"}</Btn>
-                {!enLigne && <div className="banner banner-warning"><AlertTriangle size={16} /><div>Mode démo hors ligne : les données restent dans ce navigateur.</div></div>}
-              </form>
-            )}
+            <form onSubmit={valider} className="stack" key={etape} style={{ animation: "fadeUp .35s var(--ease-out)" }}>
+              {inscription ? (
+                <>
+                  <div><h2>Créer mon espace administrateur</h2><p className="muted" style={{ marginTop: 4 }}>Votre boutique, vos produits et vos vendeurs, dans un espace qui n'appartient qu'à vous.</p></div>
+                  <Field label="Votre nom"><Input size="lg" icon={User} value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex : Aïcha Koné" autoComplete="name" autoFocus /></Field>
+                  <Field label="Nom de votre boutique" help="Affiché aux clients sur la page d'accueil."><Input size="lg" icon={Store} value={boutique} onChange={(e) => setBoutique(e.target.value)} placeholder="Ex : Aïcha Mode" autoComplete="organization" /></Field>
+                </>
+              ) : (
+                <div>
+                  <h2>{espace === "vendeur" ? "Mon espace vendeur" : enLigne ? "Mon espace" : "Connexion"}</h2>
+                  <p className="muted" style={{ marginTop: 4 }}>{espace === "vendeur" ? "Connectez-vous avec les identifiants remis par votre administrateur." : "Administrateur ou vendeur : connectez-vous pour accéder à votre tableau de bord."}</p>
+                </div>
+              )}
+              <Field label="Numéro de téléphone"><Input size="lg" icon={Phone} value={tel} onChange={(e) => setTel(e.target.value)} placeholder="07 00 00 00 00" inputMode="tel" autoComplete="tel" autoFocus={!inscription} /></Field>
+              <Field label="Mot de passe">
+                <div className="input-wrap input-lg">
+                  <Lock size={16} className="input-icon" />
+                  <input className="input" type={voir ? "text" : "password"} value={mdp} onChange={(e) => setMdp(e.target.value)} placeholder="••••••••" autoComplete={inscription ? "new-password" : "current-password"} />
+                  <button type="button" className="icon-btn" style={{ marginRight: 4 }} onClick={() => setVoir((v) => !v)} aria-label={voir ? "Masquer" : "Afficher"}>{voir ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                </div>
+              </Field>
+              {inscription && <Field label="Confirmez le mot de passe" help="6 caractères minimum."><Input size="lg" icon={Lock} type={voir ? "text" : "password"} value={mdp2} onChange={(e) => setMdp2(e.target.value)} placeholder="••••••••" autoComplete="new-password" /></Field>}
+              {inscription && codeRequis && <Field label="Code d'invitation" help="Remis par le responsable de la plateforme."><Input size="lg" icon={ShieldCheck} value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" /></Field>}
+              {erreur && <div className="banner banner-critical" key={errKey}><AlertCircle size={16} />{erreur}</div>}
+              <Btn type="submit" variant="primary" size="lg" full loading={busy}>{inscription ? "Créer mon espace" : "Se connecter"}</Btn>
+              {enLigne && (inscription
+                ? <p className="subtle" style={{ textAlign: "center" }}>Déjà un compte ? <button type="button" className="link" onClick={() => changer("connexion")}>Se connecter</button></p>
+                : <p className="subtle" style={{ textAlign: "center" }}>{espace === "vendeur" ? "Vous vendez pour votre propre compte ? " : "Pas encore d'espace ? "}<button type="button" className="link" onClick={() => changer("inscription")}>Créer mon espace administrateur</button></p>)}
+              {enLigne && <p className="subtle" style={{ textAlign: "center" }}><a className="link" href="/">← Retour à la page d'accueil</a></p>}
+              {!enLigne && <div className="banner banner-warning"><AlertTriangle size={16} /><div>Mode démo hors ligne : les données restent dans ce navigateur.</div></div>}
+            </form>
           </div>
         </div>
       </div>
@@ -4498,6 +4678,7 @@ function App() {
     case "stocks": content = estAdmin ? <PageStocks route={route} /> : <AccesReserve />; break;
     case "marketing": content = estAdmin ? <PageMarketing route={route} /> : <AccesReserve />; break;
     case "finances": content = estAdmin ? <PageFinances route={route} /> : <AccesReserve />; break;
+    case "vendeurs": content = estAdmin ? <PageVendeurs /> : <AccesReserve />; break;
     case "parametres": content = <PageParametres />; break;
     default: content = <PageAccueil />;
   }

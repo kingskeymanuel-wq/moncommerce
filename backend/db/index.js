@@ -1,62 +1,196 @@
+/**
+ * Bases de données — une plateforme, plusieurs espaces.
+ *
+ * - « plateforme » : annuaire des boutiques (une par espace administrateur) et
+ *   des comptes (téléphone → boutique), pour savoir où connecter chacun.
+ * - Un fichier SQLite par espace : produits, stocks, clients, ventes, finances,
+ *   marketing et équipe de CET administrateur. Rien n'est partagé entre espaces.
+ *
+ * Le module exporte un mandataire : `db.prepare(...)` s'adresse à la base de
+ * l'espace en cours (défini par `db.dansEspace(id, fn)` — connexion, jeton,
+ * page publique d'une boutique…). Hors de tout espace, l'appel échoue : une
+ * requête ne peut donc pas lire par erreur les données d'un autre espace.
+ */
 const Database = require("better-sqlite3");
 const fs = require("fs");
 const path = require("path");
+const { AsyncLocalStorage } = require("async_hooks");
+const { nanoid } = require("nanoid");
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, "moncommerce.db");
-const db = new Database(DB_PATH);
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
-
-// Initialise le schéma au démarrage
+const BASE = DB_PATH.replace(/\.db$/i, "");
+const DOSSIER_ESPACES = BASE + "-espaces";
 const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
-db.exec(schema);
 
-// Migrations : ajoute les colonnes apparues après la v1 aux bases existantes
-function ajouterColonne(table, colonne, definition) {
-  const colonnes = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
-  if (!colonnes.includes(colonne)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${colonne} ${definition}`);
+/* ------------------------------------------------------------ base d'un espace */
+function ouvrirEspace(fichier) {
+  const db = new Database(fichier);
+  db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
+  db.exec(schema);
+
+  // Migrations : ajoute les colonnes apparues après la v1 aux bases existantes
+  function ajouterColonne(table, colonne, definition) {
+    const colonnes = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+    if (!colonnes.includes(colonne)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${colonne} ${definition}`);
+  }
+  ajouterColonne("clients", "supprime", "INTEGER NOT NULL DEFAULT 0");
+  ajouterColonne("packs", "cout", "REAL");
+  ajouterColonne("packs", "sku", "TEXT");
+  ajouterColonne("packs", "teinte", "INTEGER NOT NULL DEFAULT 0");
+  ajouterColonne("packs", "supprime", "INTEGER NOT NULL DEFAULT 0");
+  ajouterColonne("commandes", "note", "TEXT");
+  // v3 : images produit, paiements détaillés, ticket de caisse public
+  ajouterColonne("packs", "image", "TEXT");
+  ajouterColonne("ventes", "statut_paiement", "TEXT NOT NULL DEFAULT 'payee'");
+  ajouterColonne("ventes", "montant_recu", "REAL");
+  ajouterColonne("ventes", "reference_paiement", "TEXT");
+  ajouterColonne("ventes", "telephone_paiement", "TEXT");
+  ajouterColonne("ventes", "paye_le", "TEXT");
+  ajouterColonne("commandes", "jeton_recu", "TEXT");
+
+  // v4 : boutique en ligne — commandes à plusieurs lignes
+  ajouterColonne("ventes", "commande_id", "TEXT");
+  ajouterColonne("commandes", "canal", "TEXT NOT NULL DEFAULT 'boutique'");
+  ajouterColonne("commandes", "frais_livraison", "REAL NOT NULL DEFAULT 0");
+  ajouterColonne("commandes", "contact_telephone", "TEXT");
+  ajouterColonne("commandes", "contact_email", "TEXT");
+  db.exec("UPDATE ventes SET commande_id = (SELECT c.id FROM commandes c WHERE c.vente_id = ventes.id) WHERE commande_id IS NULL");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_ventes_commande ON ventes(commande_id)");
+
+  // v5 : contenu des packs, promotions, seuils d'alerte, consentement marketing
+  ajouterColonne("packs", "contenu", "TEXT");                 // équipements / articles inclus (un par ligne)
+  ajouterColonne("packs", "prix_promo", "REAL");              // prix promotionnel
+  ajouterColonne("packs", "promo_fin", "TEXT");               // fin de la promotion (ISO), vide = sans limite
+  ajouterColonne("packs", "seuil_alerte", "INTEGER NOT NULL DEFAULT 10");
+  ajouterColonne("clients", "consentement_marketing", "INTEGER NOT NULL DEFAULT 0");
+  ajouterColonne("clients", "jeton_desinscription", "TEXT");
+  ajouterColonne("clients", "desinscrit_le", "TEXT");
+
+  // v6 : un vendeur peut être désactivé par son administrateur (son historique est conservé)
+  ajouterColonne("utilisateurs", "actif", "INTEGER NOT NULL DEFAULT 1");
+
+  // Anciens libellés de paiement → libellés actuels
+  db.prepare("UPDATE ventes SET mode_paiement = 'Carte bancaire' WHERE mode_paiement = 'Carte'").run();
+
+  // Chaque commande reçoit un jeton public (lien et QR code du ticket de caisse)
+  const sansJeton = db.prepare("SELECT id FROM commandes WHERE jeton_recu IS NULL").all();
+  const majJeton = db.prepare("UPDATE commandes SET jeton_recu = ? WHERE id = ?");
+  for (const c of sansJeton) majJeton.run(nanoid(24), c.id);
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_commandes_jeton ON commandes(jeton_recu)");
+  return db;
 }
-ajouterColonne("clients", "supprime", "INTEGER NOT NULL DEFAULT 0");
-ajouterColonne("packs", "cout", "REAL");
-ajouterColonne("packs", "sku", "TEXT");
-ajouterColonne("packs", "teinte", "INTEGER NOT NULL DEFAULT 0");
-ajouterColonne("packs", "supprime", "INTEGER NOT NULL DEFAULT 0");
-ajouterColonne("commandes", "note", "TEXT");
-// v3 : images produit, paiements détaillés, ticket de caisse public
-ajouterColonne("packs", "image", "TEXT");
-ajouterColonne("ventes", "statut_paiement", "TEXT NOT NULL DEFAULT 'payee'");
-ajouterColonne("ventes", "montant_recu", "REAL");
-ajouterColonne("ventes", "reference_paiement", "TEXT");
-ajouterColonne("ventes", "telephone_paiement", "TEXT");
-ajouterColonne("ventes", "paye_le", "TEXT");
-ajouterColonne("commandes", "jeton_recu", "TEXT");
 
-// v4 : boutique en ligne — commandes à plusieurs lignes
-ajouterColonne("ventes", "commande_id", "TEXT");
-ajouterColonne("commandes", "canal", "TEXT NOT NULL DEFAULT 'boutique'");
-ajouterColonne("commandes", "frais_livraison", "REAL NOT NULL DEFAULT 0");
-ajouterColonne("commandes", "contact_telephone", "TEXT");
-ajouterColonne("commandes", "contact_email", "TEXT");
-db.exec("UPDATE ventes SET commande_id = (SELECT c.id FROM commandes c WHERE c.vente_id = ventes.id) WHERE commande_id IS NULL");
-db.exec("CREATE INDEX IF NOT EXISTS idx_ventes_commande ON ventes(commande_id)");
+/* ------------------------------------------------------------ plateforme */
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+const plateforme = new Database(BASE + "-plateforme.db");
+plateforme.pragma("journal_mode = WAL");
+plateforme.exec(`
+  CREATE TABLE IF NOT EXISTS boutiques (
+    id       TEXT PRIMARY KEY,
+    slug     TEXT UNIQUE NOT NULL,     -- adresse publique : /#/boutique/<slug>
+    fichier  TEXT NOT NULL,            -- base SQLite de l'espace
+    cree_le  TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS comptes (
+    telephone    TEXT PRIMARY KEY,     -- un numéro = un compte sur toute la plateforme
+    boutique_id  TEXT NOT NULL REFERENCES boutiques(id) ON DELETE CASCADE
+  );
+`);
 
-// v5 : contenu des packs, promotions, seuils d'alerte, consentement marketing
-ajouterColonne("packs", "contenu", "TEXT");                 // équipements / articles inclus (un par ligne)
-ajouterColonne("packs", "prix_promo", "REAL");              // prix promotionnel
-ajouterColonne("packs", "promo_fin", "TEXT");               // fin de la promotion (ISO), vide = sans limite
-ajouterColonne("packs", "seuil_alerte", "INTEGER NOT NULL DEFAULT 10");
-ajouterColonne("clients", "consentement_marketing", "INTEGER NOT NULL DEFAULT 0");
-ajouterColonne("clients", "jeton_desinscription", "TEXT");
-ajouterColonne("clients", "desinscrit_le", "TEXT");
+const ouvertes = new Map(); // id de boutique → connexion
+const boutiques = new Map(); // id → { id, slug, fichier, cree_le }
+for (const b of plateforme.prepare("SELECT * FROM boutiques ORDER BY cree_le").all()) boutiques.set(b.id, b);
 
-// Anciens libellés de paiement → libellés actuels
-db.prepare("UPDATE ventes SET mode_paiement = 'Carte bancaire' WHERE mode_paiement = 'Carte'").run();
+function connexion(id) {
+  let c = ouvertes.get(id);
+  if (!c) {
+    const b = boutiques.get(id);
+    if (!b) throw new Error("Espace inconnu");
+    c = ouvrirEspace(b.fichier);
+    ouvertes.set(id, c);
+  }
+  return c;
+}
 
-// Chaque commande reçoit un jeton public (lien et QR code du ticket de caisse)
-const { nanoid } = require("nanoid");
-const sansJeton = db.prepare("SELECT id FROM commandes WHERE jeton_recu IS NULL").all();
-const majJeton = db.prepare("UPDATE commandes SET jeton_recu = ? WHERE id = ?");
-for (const c of sansJeton) majJeton.run(nanoid(24), c.id);
-db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_commandes_jeton ON commandes(jeton_recu)");
+const slugifier = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "boutique";
+function slugLibre(nom) {
+  const base = slugifier(nom);
+  const pris = new Set([...boutiques.values()].map((b) => b.slug));
+  let slug = base;
+  for (let n = 2; pris.has(slug); n++) slug = `${base}-${n}`;
+  return slug;
+}
 
-module.exports = db;
+/** Crée un nouvel espace (boutique) vide et renvoie sa fiche. */
+function creerBoutique(nom, fichier) {
+  const id = nanoid(10);
+  if (!fichier) {
+    fs.mkdirSync(DOSSIER_ESPACES, { recursive: true });
+    fichier = path.join(DOSSIER_ESPACES, id + ".db");
+  }
+  const b = { id, slug: slugLibre(nom), fichier, cree_le: new Date().toISOString() };
+  plateforme.prepare("INSERT INTO boutiques (id, slug, fichier, cree_le) VALUES (?, ?, ?, ?)").run(b.id, b.slug, b.fichier, b.cree_le);
+  boutiques.set(id, b);
+  return b;
+}
+
+const als = new AsyncLocalStorage();
+/** Exécute fn dans l'espace de la boutique donnée (tout `db.…` s'y adresse). */
+function dansEspace(id, fn) {
+  const b = boutiques.get(id);
+  if (!b) throw new Error("Espace inconnu");
+  return als.run({ boutique: b }, fn);
+}
+const espaceCourant = () => als.getStore()?.boutique || null;
+const listerBoutiques = () => [...boutiques.values()];
+const boutiqueParRef = (ref) => boutiques.get(String(ref)) || listerBoutiques().find((b) => b.slug === String(ref)) || null;
+/** Exécute fn dans chaque espace ; renvoie les résultats (les erreurs d'un espace n'arrêtent pas les autres). */
+function pourChaqueEspace(fn) {
+  const r = [];
+  for (const b of listerBoutiques()) {
+    try { r.push(dansEspace(b.id, () => fn(b))); } catch (e) { console.error(`Espace ${b.slug} :`, e.message); }
+  }
+  return r;
+}
+/** Premier espace pour lequel fn renvoie une valeur (recherche d'un jeton public, d'une transaction…). */
+function trouverEspace(fn) {
+  for (const b of listerBoutiques()) {
+    try { if (dansEspace(b.id, () => fn(b))) return b; } catch { /* espace illisible : ignoré */ }
+  }
+  return null;
+}
+
+const comptes = {
+  boutiqueDe: (telephone) => plateforme.prepare("SELECT boutique_id FROM comptes WHERE telephone = ?").get(String(telephone))?.boutique_id || null,
+  ajouter: (telephone, boutiqueId) => plateforme.prepare("INSERT INTO comptes (telephone, boutique_id) VALUES (?, ?)").run(String(telephone), boutiqueId),
+  retirer: (telephone) => plateforme.prepare("DELETE FROM comptes WHERE telephone = ?").run(String(telephone)),
+};
+
+// Installation antérieure (une seule base) : elle devient le premier espace, sans rien perdre
+if (boutiques.size === 0 && fs.existsSync(DB_PATH)) {
+  const ancienne = ouvrirEspace(DB_PATH);
+  const utilisateurs = ancienne.prepare("SELECT telephone FROM utilisateurs").all();
+  if (utilisateurs.length) {
+    const nom = ancienne.prepare("SELECT valeur FROM parametres WHERE cle = 'nom'").get()?.valeur || "Ma Boutique";
+    const b = creerBoutique(nom, DB_PATH);
+    ouvertes.set(b.id, ancienne);
+    for (const u of utilisateurs) comptes.ajouter(String(u.telephone).replace(/[\s.\-()]/g, ""), b.id);
+    console.log(`   Base existante rattachée à l'espace « ${nom} » (${utilisateurs.length} compte(s))`);
+  } else {
+    ancienne.close();
+  }
+}
+
+const outils = { dansEspace, espaceCourant, listerBoutiques, boutiqueParRef, pourChaqueEspace, trouverEspace, creerBoutique, comptes };
+
+module.exports = new Proxy(outils, {
+  get(cible, prop) {
+    if (prop in cible) return cible[prop];
+    const b = espaceCourant();
+    if (!b) throw new Error(`Base de données utilisée hors d'un espace (db.${String(prop)})`);
+    const c = connexion(b.id);
+    const v = c[prop];
+    return typeof v === "function" ? v.bind(c) : v;
+  },
+});

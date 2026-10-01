@@ -16,19 +16,32 @@ const router = express.Router();
  */
 router.get("/", (req, res) => {
   const admin = req.user?.role === "admin";
+  const espace = db.espaceCourant();
+  // Un vendeur ne voit que SON activité : ses ventes en caisse et les commandes arrivées par son lien
+  const moi = req.user.id;
+  const ventes = db
+    .prepare("SELECT v.*, u.nom AS vendeur_nom FROM ventes v LEFT JOIN utilisateurs u ON u.id = v.vendeur_id ORDER BY v.date_vente")
+    .all()
+    .filter((v) => admin || v.vendeur_id === moi);
+  const mesCommandes = new Set(ventes.map((v) => v.commande_id));
+  const mesVentes = new Set(ventes.map((v) => v.id));
+  const commandes = db.prepare("SELECT * FROM commandes").all().filter((c) => admin || mesCommandes.has(c.id) || mesVentes.has(c.vente_id));
+  const idsCommandes = new Set(commandes.map((c) => c.id));
   res.json({
     role: req.user?.role,
+    moi,
+    espace: { id: espace.id, slug: espace.slug },
+    equipe: db.prepare("SELECT id, nom, telephone, role, actif, cree_le FROM utilisateurs ORDER BY role, cree_le").all()
+      .filter((u) => admin || u.id === moi).map((u) => ({ ...u, cree_le: versIso(u.cree_le) })),
     clients: db.prepare("SELECT * FROM clients WHERE supprime = 0 ORDER BY cree_le").all().map((c) => ({ ...c, cree_le: versIso(c.cree_le) })),
     // Les vendeurs ne voient ni les coûts d'achat ni les dépenses de la boutique
     packs: db.prepare("SELECT * FROM packs WHERE supprime = 0 ORDER BY cree_le").all().map((p) => ({ ...p, cout: admin ? p.cout : null, cree_le: versIso(p.cree_le) })),
-    ventes: db
-      .prepare("SELECT v.*, u.nom AS vendeur_nom FROM ventes v LEFT JOIN utilisateurs u ON u.id = v.vendeur_id ORDER BY v.date_vente")
-      .all()
-      .map((v) => ({ ...v, date_vente: versIso(v.date_vente), paye_le: versIso(v.paye_le) })),
-    commandes: db.prepare("SELECT * FROM commandes").all().map((c) => ({ ...c, maj_le: versIso(c.maj_le) })),
+    ventes: ventes.map((v) => ({ ...v, date_vente: versIso(v.date_vente), paye_le: versIso(v.paye_le) })),
+    commandes: commandes.map((c) => ({ ...c, maj_le: versIso(c.maj_le) })),
     evenements: db
       .prepare("SELECT id, commande_id, type, statut, texte, cree_le FROM commande_evenements ORDER BY cree_le")
       .all()
+      .filter((e) => idsCommandes.has(e.commande_id))
       .map((e) => ({ ...e, cree_le: versIso(e.cree_le) })),
     investissements: admin ? db.prepare("SELECT * FROM investissements ORDER BY date_invest DESC").all() : [],
     boutique: lireBoutique(),

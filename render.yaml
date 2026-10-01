@@ -28,10 +28,11 @@ services:
       # Secrets générés par Render
       - key: JWT_SECRET
         generateValue: true
-      - key: CODE_INSTALLATION
-        generateValue: true
       # À renseigner dans le tableau de bord Render (facultatif)
       - key: PUBLIC_URL
+        sync: false
+      # Réserve la création d'espaces administrateur à ceux qui ont ce code (vide = inscription ouverte)
+      - key: CODE_INVITATION
         sync: false
       - key: CINETPAY_API_KEY
         sync: false

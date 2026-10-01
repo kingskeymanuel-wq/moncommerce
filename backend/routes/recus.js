@@ -12,9 +12,11 @@ const router = express.Router();
 router.get("/:jeton", (req, res) => {
   const jeton = String(req.params.jeton);
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(jeton)) return res.status(404).json({ erreur: "Ticket introuvable" });
-  const cmd = db.prepare("SELECT * FROM commandes WHERE jeton_recu = ?").get(jeton);
-  if (!cmd) return res.status(404).json({ erreur: "Ticket introuvable" });
-  res.json(ticketCommande(cmd));
+  // Le ticket appartient à l'un des espaces de la plateforme
+  const lire = () => db.prepare("SELECT * FROM commandes WHERE jeton_recu = ?").get(jeton);
+  const espace = db.trouverEspace(lire);
+  if (!espace) return res.status(404).json({ erreur: "Ticket introuvable" });
+  db.dansEspace(espace.id, () => res.json(ticketCommande(lire())));
 });
 
 module.exports = router;

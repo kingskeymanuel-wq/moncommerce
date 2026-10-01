@@ -1,11 +1,16 @@
-# MonCommerce — boutique en ligne + administration (projet complet)
+# MonCommerce — plateforme de boutiques en ligne + administration
 
-Deux sites servis par un même serveur, une seule base de données :
+Une plateforme, plusieurs espaces :
 
-- **La boutique client** (`/`) : catalogue, fiche produit, panier, commande,
-  paiement, suivi de commande et ticket de caisse téléchargeable.
-- **L'administration** (`/admin/`) : caisse, commandes, produits, clients,
-  ventes, finances, réglages (style Shopify).
+- **La page d'accueil** (`/`) présente les produits de **tous les
+  administrateurs** ; chaque boutique a aussi sa page (`/#/boutique/<adresse>`).
+  Panier, commande, paiement, suivi et ticket de caisse téléchargeable.
+- **« Mon espace »** (bouton de la page d'accueil → `/admin/`) : connexion de
+  l'administrateur ou du vendeur à son tableau de bord, ou création d'un nouvel
+  espace administrateur.
+- **Chaque administrateur a son propre espace**, totalement séparé des autres :
+  ses produits, stocks, clients, ventes, finances, marketing et **ses vendeurs**,
+  dont il suit l'activité. Chaque vendeur ne voit que ses propres ventes.
 
 ```
 moncommerce-complet/
@@ -33,9 +38,13 @@ npm start
 - Boutique client : **http://localhost:4000/**
 - Administration : **http://localhost:4000/admin/**
 
-Au premier lancement, l'administration propose de créer le **compte
-administrateur** (nom, téléphone, mot de passe). La connexion se fait par
-téléphone + mot de passe.
+Depuis la page d'accueil, **Mon espace → Créer mon espace** ouvre un espace
+administrateur (nom, nom de la boutique, téléphone, mot de passe). Chaque
+personne qui s'inscrit ainsi obtient un espace distinct. La connexion se fait
+par téléphone + mot de passe ; un numéro = un compte sur toute la plateforme.
+
+Une installation d'une version précédente (une seule base) est reprise
+automatiquement : elle devient le premier espace, sans perte de données.
 
 ## 2. La boutique en ligne
 
@@ -112,8 +121,20 @@ L'intégration suit l'API CinetPay v1 du SDK officiel
 | Supprimer une commande ou un client | ✔ | — |
 
 Les restrictions sont appliquées par le serveur (403), pas seulement masquées
-dans l'interface. Le premier compte créé est administrateur ; il crée ensuite
-les vendeurs dans *Paramètres → Équipe*.
+dans l'interface. L'administrateur crée ses vendeurs dans la page **Vendeurs**,
+où il suit leurs ventes (en caisse et via leur lien), change leur mot de passe
+ou les désactive.
+
+### Espaces, vendeurs et lien de promotion
+- **Un espace par administrateur** : une base de données par espace
+  (`<DB_PATH>-espaces/`), plus un annuaire des boutiques et des comptes
+  (`<DB_PATH>-plateforme.db`). Aucune donnée n'est partagée entre espaces.
+- **Le vendeur fait la promotion des produits** de son administrateur : son
+  tableau de bord affiche son **lien de promotion**
+  (`/#/boutique/<adresse>?v=<vendeur>`). Toute commande passée par ce lien lui
+  est attribuée et apparaît dans son espace et dans le suivi de l'administrateur.
+- **Une commande = une boutique** : le panier ne mélange pas les produits de
+  deux boutiques (livraison et paiement sont propres à chacune).
 
 ### Tickets de caisse
 1. Avant validation, la vente (caisse ou boutique en ligne) est présentée sous
@@ -140,17 +161,18 @@ dont les données restent dans le navigateur.
 
 Le fichier `render.yaml` décrit tout le déploiement : instance `0.5c-512mb`
 (région Francfort), disque persistant de 1 Go monté sur `/var/data` pour la
-base (`DB_PATH`) et les photos (`UPLOADS_DIR`), secrets `JWT_SECRET` et
-`CODE_INSTALLATION` générés automatiquement.
+bases (`DB_PATH`) et les photos (`UPLOADS_DIR`), secret `JWT_SECRET`
+généré automatiquement.
 
 1. Sur [render.com](https://render.com), créez un compte en vous connectant
    avec GitHub et ajoutez un moyen de paiement (le disque exige une instance
    payante).
 2. **New → Blueprint**, choisissez le dépôt `moncommerce`, puis **Apply**.
-3. Une fois le déploiement terminé, ouvrez le service → **Environment** et
-   copiez la valeur de `CODE_INSTALLATION`.
-4. Ouvrez `https://<votre-service>.onrender.com/admin/` et créez le compte
-   administrateur avec ce code (sans lui, personne ne peut créer le premier compte).
+3. Ouvrez `https://<votre-service>.onrender.com/`, puis **Mon espace → Créer
+   mon espace** pour ouvrir votre espace administrateur.
+4. Facultatif : définissez `CODE_INVITATION` dans **Environment** pour réserver
+   la création d'espaces aux personnes à qui vous donnez ce code (sinon
+   l'inscription est ouverte à tous).
 5. Facultatif : nom de domaine personnalisé (service → **Settings → Custom
    Domains**, puis renseignez `PUBLIC_URL`), clés CinetPay dans **Environment**.
 

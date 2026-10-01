@@ -36,8 +36,10 @@ binaires précompilés pour Node 20 à 24 : ni Python ni compilateur requis.
 
 | Méthode | Route | Description |
 |---|---|---|
-| GET | `/api/auth/etat` | `{ initialise }` : le premier compte reste-t-il à créer ? |
-| POST | `/api/auth/inscription` | `{ nom, telephone, mot_de_passe (≥ 6), email?, role? }` — libre pour le **premier compte (administrateur)**, ensuite réservé aux administrateurs |
+| GET | `/api/auth/etat` | `{ inscription_ouverte, code_invitation, espaces }` |
+| POST | `/api/auth/inscription` | **Sans session** : `{ nom, boutique, telephone, mot_de_passe (≥ 6), code_invitation? }` crée un **nouvel espace** et son administrateur → `{ utilisateur, boutique, jeton }`. **Avec une session administrateur** : `{ nom, telephone, mot_de_passe, role? }` ajoute un vendeur (ou co-administrateur) à son espace. |
+| GET | `/api/auth/equipe` | (admin) membres de l'espace |
+| PATCH | `/api/auth/equipe/:id` | (admin) `{ actif?, mot_de_passe?, nom? }` — désactiver / réactiver un vendeur, changer son mot de passe |
 | POST | `/api/auth/connexion` | `{ telephone, mot_de_passe }` → `{ utilisateur, jeton }` |
 | GET | `/api/auth/moi` | Profil de l'utilisateur connecté |
 
@@ -46,6 +48,14 @@ Les autres routes `/api/*` (sauf boutique, reçus et santé) exigent
 relu en base : un compte supprimé est déconnecté et son rôle actuel s'applique.
 
 ## Boutique en ligne — routes publiques
+
+Plateforme multi-boutiques : `GET /api/boutique/boutiques` (toutes les boutiques),
+`GET /api/boutique/produits` (tous les produits, avec `cle`, `boutique_id`,
+`boutique_slug`, `boutique_nom`) ou `?boutique=<id|adresse>` pour une seule.
+`config` et `commandes` prennent le paramètre `boutique` (facultatif s'il
+n'existe qu'une boutique). `POST /commandes` accepte `vendeur` : identifiant du
+vendeur dont le lien de promotion a été suivi. Les routes à jeton (suivi, ticket,
+désinscription, webhook) retrouvent seules l'espace concerné.
 
 | Méthode | Route | Description |
 |---|---|---|
@@ -151,7 +161,9 @@ Seuls les clients ayant donné leur accord (`consentement_marketing`) sont conta
 ## Sécurité
 
 - Mots de passe hachés (bcrypt), JWT, compte revérifié à chaque requête
-- Premier compte administrateur, création des comptes suivants réservée aux administrateurs
+- **Cloisonnement des espaces** : une base SQLite par administrateur ; le jeton de session désigne l'espace, et toute requête s'exécute dans celui-ci (`db/index.js`, `AsyncLocalStorage`). Une requête hors espace échoue au lieu de lire d'autres données.
+- Un vendeur n'accède qu'à ses ventes et aux commandes qui lui sont attribuées (403 sinon) ; comptes vendeurs créés, désactivés et réinitialisés par leur administrateur
+- Inscription d'un nouvel espace ouverte, ou réservée par `CODE_INVITATION`
 - Helmet (CSP adaptée aux CDN utilisés), CORS configurable
 - Limitation de débit : 600 req / 15 min / IP, 30 pour connexion/inscription, 20 commandes publiques / 15 min
 - Transactions SQL pour vente + stock + commande ; décrément de stock conditionnel contre les ventes simultanées

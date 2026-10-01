@@ -1,10 +1,13 @@
 /**
  * Boutique en ligne — API publique (sans connexion) utilisée par le site client.
  *
- *   GET  /api/boutique/config                  informations, livraison, moyens de paiement
- *   GET  /api/boutique/produits                catalogue (produits actifs)
- *   GET  /api/boutique/produits/:id
- *   POST /api/boutique/commandes               passer commande (prix et stock vérifiés ici)
+ * La plateforme réunit les boutiques de tous les administrateurs : la page
+ * d'accueil présente tous leurs produits, chaque commande concerne UNE boutique.
+ *
+ *   GET  /api/boutique/boutiques               toutes les boutiques (informations, livraison, paiements)
+ *   GET  /api/boutique/config?boutique=        une boutique (identifiant ou adresse courte)
+ *   GET  /api/boutique/produits[?boutique=]    catalogue : toutes les boutiques, ou une seule
+ *   POST /api/boutique/commandes               passer commande { boutique, vendeur?, … } (prix et stock vérifiés ici)
  *   GET  /api/boutique/commandes/:jeton        suivi de commande + ticket
  *   POST /api/boutique/paiements/cinetpay/notification   webhook CinetPay
  *
@@ -39,11 +42,29 @@ const MAX_LIGNES = 30;
 const MAX_QTE = 50;
 const DELAI_ABANDON_MIN = 60; // paiement en ligne non finalisé → commande annulée, stock libéré
 
+/* Espace concerné par une requête publique : paramètre « boutique » (identifiant ou
+   adresse courte) ; s'il n'existe qu'une boutique sur la plateforme, c'est elle. */
+function espacePublic(req, res, next) {
+  const ref = req.query.boutique || req.body?.boutique;
+  const toutes = db.listerBoutiques();
+  const b = ref ? db.boutiqueParRef(ref) : toutes.length === 1 ? toutes[0] : null;
+  if (!b) return res.status(ref ? 404 : 400).json({ erreur: ref ? "Boutique introuvable" : "Précisez la boutique" });
+  db.dansEspace(b.id, next);
+}
+/* Espace auquel appartient un jeton public (commande, désinscription, transaction) */
+const espaceParJeton = (chercher) => (req, res, next) => {
+  const b = db.trouverEspace(() => chercher(req));
+  if (!b) return res.status(404).json({ erreur: "Lien invalide ou expiré" });
+  db.dansEspace(b.id, next);
+};
+
 function configPublique() {
   const b = lireBoutique();
+  const espace = db.espaceCourant();
   const frais = Math.max(0, Math.round(Number(b.frais_livraison) || 0));
   const gratuite = Math.max(0, Math.round(Number(b.livraison_gratuite_des) || 0));
   return {
+    id: espace.id, slug: espace.slug,
     boutique: { nom: b.nom, slogan: b.slogan, adresse: b.adresse, telephone: b.telephone, whatsapp: b.whatsapp, message: b.message },
     ouverte: b.boutique_ouverte !== "0",
     livraison: { frais, gratuite_des: gratuite, zone: b.zone_livraison },
@@ -62,7 +83,11 @@ function produitsPublics() {
     `SELECT v.pack_id, SUM(v.quantite) AS n FROM ventes v LEFT JOIN commandes c ON c.id = v.commande_id
      WHERE COALESCE(c.statut, '') <> 'annulee' GROUP BY v.pack_id`
   ).all().map((r) => [r.pack_id, r.n]));
+  const espace = db.espaceCourant();
+  const nomBoutique = lireBoutique().nom;
   return db.prepare("SELECT * FROM packs WHERE supprime = 0 AND actif = 1 ORDER BY cree_le DESC").all().map((p) => ({
+    // cle : identifiant unique sur toute la plateforme (deux boutiques peuvent avoir le même id de produit)
+    cle: espace.id + "." + p.id, boutique_id: espace.id, boutique_slug: espace.slug, boutique_nom: nomBoutique,
     id: p.id, nom: p.nom, description: p.description || "", image: p.image, emoji: p.emoji, teinte: p.teinte,
     // Prix appliqué (promotion comprise) et prix normal barré pendant une promotion
     prix: prixEffectif(p), prix_normal: promoActive(p) ? p.prix : null, remise: remisePourcent(p), promo_fin: promoActive(p) ? p.promo_fin : null,
@@ -75,14 +100,14 @@ const lireParJeton = (jeton) => (/^[A-Za-z0-9_-]{16,64}$/.test(String(jeton)) ? 
 
 /* ---------------------------------------------------------------- lecture */
 
-router.get("/config", (req, res) => res.json(configPublique()));
+router.get("/boutiques", (req, res) => res.json(db.pourChaqueEspace(() => configPublique())));
 
-router.get("/produits", (req, res) => res.json(produitsPublics()));
+router.get("/config", espacePublic, (req, res) => res.json(configPublique()));
 
-router.get("/produits/:id", (req, res) => {
-  const p = produitsPublics().find((x) => x.id === req.params.id);
-  if (!p) return res.status(404).json({ erreur: "Produit introuvable" });
-  res.json(p);
+// Catalogue de la plateforme : les produits de toutes les boutiques ouvertes, les plus récents d'abord
+router.get("/produits", (req, res) => {
+  if (req.query.boutique) return espacePublic(req, res, () => res.json(produitsPublics()));
+  res.json(db.pourChaqueEspace(() => produitsPublics()).flat().sort((a, b) => String(b.cree_le).localeCompare(String(a.cree_le))));
 });
 
 /* ---------------------------------------------------------------- commande */
@@ -124,8 +149,10 @@ function trouverOuCreerClient(c) {
   return id;
 }
 
-router.post("/commandes", limiteCommandes, async (req, res) => {
+router.post("/commandes", limiteCommandes, espacePublic, async (req, res) => {
   const cfg = configPublique();
+  // Commande arrivée par le lien de promotion d'un vendeur : elle lui est attribuée
+  const vendeurId = req.body.vendeur ? db.prepare("SELECT id FROM utilisateurs WHERE id = ? AND actif = 1").get(String(req.body.vendeur))?.id || null : null;
   if (!cfg.ouverte) return res.status(403).json({ erreur: "La boutique n'accepte pas de commandes en ligne pour le moment." });
 
   // Lignes : regroupées par produit, quantités entières
@@ -192,15 +219,15 @@ router.post("/commandes", limiteCommandes, async (req, res) => {
       numero = prochainNumero();
       const venteIds = [];
       const insVente = db.prepare(
-        `INSERT INTO ventes (id, commande_id, client_id, pack_id, quantite, prix_unitaire, mode_paiement, statut_paiement,
-           reference_paiement, telephone_paiement, date_vente) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO ventes (id, commande_id, client_id, pack_id, vendeur_id, quantite, prix_unitaire, mode_paiement, statut_paiement,
+           reference_paiement, telephone_paiement, date_vente) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
       for (const l of lignes) {
         // Décrément conditionnel : protège contre deux commandes simultanées sur le dernier article
         if (!mouvement(l.pack.id, -l.quantite, "vente_en_ligne", { reference: numero, conditionnel: true })) throw Object.assign(new Error("stock"), { stock: l.pack });
         const id = nanoid();
         venteIds.push(id);
-        insVente.run(id, commandeId, clientId, l.pack.id, l.quantite, prixEffectif(l.pack), champsPaiement.mode, champsPaiement.statut,
+        insVente.run(id, commandeId, clientId, l.pack.id, vendeurId, l.quantite, prixEffectif(l.pack), champsPaiement.mode, champsPaiement.statut,
           champsPaiement.reference || null, champsPaiement.telephone || null, maintenant);
       }
       db.prepare(
@@ -292,7 +319,8 @@ async function verifierPaiementEnLigne(cmd) {
 
 // Webhook CinetPay : on authentifie la notification (notify_token), puis on
 // redemande le statut à CinetPay plutôt que de croire le contenu reçu.
-router.post("/paiements/cinetpay/notification", async (req, res) => {
+const espaceTransaction = espaceParJeton((req) => req.body?.merchant_transaction_id && db.prepare("SELECT 1 FROM paiements_en_ligne WHERE merchant_transaction_id = ?").get(String(req.body.merchant_transaction_id)));
+router.post("/paiements/cinetpay/notification", (req, res, next) => (req.body?.merchant_transaction_id ? espaceTransaction(req, res, next) : res.status(404).json({ erreur: "Transaction inconnue" })), async (req, res) => {
   const { notify_token: recu, merchant_transaction_id: mid, transaction_id: tid } = req.body || {};
   const p = mid ? db.prepare("SELECT * FROM paiements_en_ligne WHERE merchant_transaction_id = ?").get(String(mid)) : null;
   if (!p || !recu || !p.notify_token) return res.status(404).json({ erreur: "Transaction inconnue" });
@@ -310,7 +338,7 @@ router.post("/paiements/cinetpay/notification", async (req, res) => {
 
 /* ---------------------------------------------------------------- suivi */
 
-router.get("/commandes/:jeton", async (req, res) => {
+router.get("/commandes/:jeton", espaceParJeton((req) => lireParJeton(req.params.jeton)), async (req, res) => {
   let cmd = lireParJeton(req.params.jeton);
   if (!cmd) return res.status(404).json({ erreur: "Commande introuvable" });
   let ligne = lignesCommande(cmd)[0];
@@ -339,6 +367,7 @@ router.get("/commandes/:jeton", async (req, res) => {
     reprendre_paiement: ligne?.statut_paiement === "en_cours" ? enLigne?.payment_url || null : null,
     transfert: ligne?.statut_paiement === "a_verifier" && operateur ? operateur : null,
     contact: { telephone: cfg.boutique.telephone, whatsapp: cfg.boutique.whatsapp },
+    boutique_slug: cfg.slug,
     client: nomCourt(t.client),
   });
 });
@@ -347,12 +376,13 @@ router.get("/commandes/:jeton", async (req, res) => {
 
 // Lien « STOP » des SMS et e-mails marketing : le client se désinscrit sans compte
 const clientParJeton = (j) => (/^[A-Za-z0-9_-]{8,40}$/.test(String(j)) ? db.prepare("SELECT * FROM clients WHERE jeton_desinscription = ?").get(String(j)) : null);
-router.get("/stop/:jeton", (req, res) => {
+const espaceStop = espaceParJeton((req) => clientParJeton(req.params.jeton));
+router.get("/stop/:jeton", espaceStop, (req, res) => {
   const c = clientParJeton(req.params.jeton);
   if (!c) return res.status(404).json({ erreur: "Lien de désinscription invalide" });
   res.json({ prenom: String(c.nom || "").split(" ")[0], boutique: lireBoutique().nom, abonne: !!c.consentement_marketing });
 });
-router.post("/stop/:jeton", (req, res) => {
+router.post("/stop/:jeton", espaceStop, (req, res) => {
   const c = clientParJeton(req.params.jeton);
   if (!c) return res.status(404).json({ erreur: "Lien de désinscription invalide" });
   const abonner = req.body?.abonner === true;
@@ -382,6 +412,6 @@ function nettoyerAbandons() {
     }).catch((e) => console.error("Nettoyage des paiements :", e.message));
   }
 }
-setInterval(nettoyerAbandons, 10 * 60 * 1000).unref();
+setInterval(() => db.pourChaqueEspace(nettoyerAbandons), 10 * 60 * 1000).unref();
 
 module.exports = router;

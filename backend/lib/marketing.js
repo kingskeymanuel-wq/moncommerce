@@ -39,7 +39,7 @@ function contexte() {
   const finPromo = pr.map((p) => p.promo_fin).filter(Boolean).sort()[0];
   return {
     boutique: lireBoutique().nom,
-    lien: urlBase() + "/",
+    lien: `${urlBase()}/#/boutique/${db.espaceCourant().slug}`,
     nouveautes: nv.length ? ` Nouveautés : ${nv.map((p) => p.nom).join(", ")}.` : "",
     nouveautes_detail: nv.map((p) => `${p.nom} (${fmt(prixEffectif(p))})`).join(", ") || "de nouveaux articles",
     promos: pr.length ? ` En promotion : ${pr.map((p) => `${p.nom} -${remisePourcent(p)}%`).join(", ")}.` : "",
@@ -203,12 +203,13 @@ function verifierHebdo() {
     const maintenant = new Date();
     if (h.actif !== "1" || maintenant.getUTCDay() !== Number(h.jour) || maintenant.getUTCHours() < Number(h.heure) || h.dernier === semaine(maintenant)) return;
     envoyerHebdo();
-    console.log("Message hebdomadaire envoyé", semaine(maintenant));
+    console.log("Message hebdomadaire envoyé", db.espaceCourant().slug, semaine(maintenant));
   } catch (e) {
     console.error("Message hebdomadaire :", e.message);
   }
 }
-setInterval(verifierHebdo, 10 * 60 * 1000).unref();
-setTimeout(verifierHebdo, 15000).unref();
+// Chaque espace a ses propres réglages et ses propres clients
+setInterval(() => db.pourChaqueEspace(verifierHebdo), 10 * 60 * 1000).unref();
+setTimeout(() => db.pourChaqueEspace(verifierHebdo), 15000).unref();
 
 module.exports = { MODELES, AUDIENCES, apercu, lancerCampagne, lireHebdo, ecrireHebdo, envoyerHebdo, destinataires, smsConfigure, emailConfigure, semaine };

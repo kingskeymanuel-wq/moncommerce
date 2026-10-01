@@ -5,6 +5,7 @@ node_modules/
 # Données locales (base SQLite et photos) — jamais dans le dépôt
 backend/db/*.db
 backend/db/*.db-*
+backend/db/*-espaces/
 backend/uploads/
 
 # Éditeur

@@ -4,20 +4,30 @@ import { createPortal } from "react-dom";
 import {
   ShoppingBag, ShoppingCart, Search, X, Plus, Minus, Trash2, ArrowLeft, ArrowRight, Check, CheckCircle2, Clock,
   Truck, PackageCheck, XCircle, Phone, MapPin, Mail, MessageSquare, ShieldCheck, Smartphone, CreditCard, Banknote,
-  Copy, Download, Printer, AlertCircle, AlertTriangle, Info, Receipt, Store, User, ChevronRight, Loader2, Sparkles, Package, Tag, FileText, BellOff, Bell,
+  Copy, Download, Printer, AlertCircle, AlertTriangle, Info, Receipt, Store, User, ChevronRight, Loader2, Sparkles, Package, Tag, FileText, BellOff, Bell, LayoutDashboard, ChevronDown, UserPlus,
 } from "lucide-react";
 import { fmt, fmtNum, lignesTicket, telechargerTicketPdf, urlTicketPdf, pdfIntegrable, genererQr, cheminQr, lienTicket, telInternational } from "/partage/ticket.js";
 
 /* =====================================================================
-   MonCommerce — boutique en ligne (site client)
-   Toutes les données viennent de l'API /api/boutique : produits, prix et
-   stock réels, commandes enregistrées dans la même base que l'administration.
+   MonCommerce — page d'accueil de la plateforme et boutiques en ligne
+   La page d'accueil présente les produits de TOUS les administrateurs ; chaque
+   boutique a aussi sa propre page (#/boutique/<adresse>). Une commande concerne
+   une seule boutique. « Mon espace » mène au tableau de bord (administrateur ou vendeur).
    ===================================================================== */
 
 const API = (window.MONCOMMERCE_API_URL || "").replace(/\/$/, "");
 const PANIER_KEY = "boutique-panier";
 const COMMANDES_KEY = "boutique-mes-commandes";
 const CLIENT_KEY = "boutique-client";
+const REF_KEY = "boutique-vendeurs"; // lien de promotion suivi : { idBoutique: idVendeur }
+const PLATEFORME = "MonCommerce";
+/* Réglages neutres quand aucune boutique n'est concernée (page d'accueil de la plateforme) */
+const CONFIG_PLATEFORME = {
+  id: null, slug: null, plateforme: true, ouverte: true,
+  boutique: { nom: PLATEFORME, slogan: "", adresse: "", telephone: "", whatsapp: "", message: "" },
+  livraison: { frais: 0, gratuite_des: 0, zone: "" },
+  paiements: { livraison: true, transfert: [], en_ligne: false, en_ligne_test: false },
+};
 
 const cx = (...a) => a.filter(Boolean).join(" ");
 const norm = (s) => (s || "").toString().normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -58,8 +68,9 @@ const useBoutique = () => useContext(Ctx);
 
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, "");
-  const [page = "", id = null] = h.split("?")[0].split("/").filter(Boolean);
-  return { page, id: id ? decodeURIComponent(id) : null };
+  const [chemin, requete = ""] = h.split("?");
+  const [page = "", id = null] = chemin.split("/").filter(Boolean);
+  return { page, id: id ? decodeURIComponent(id) : null, vendeur: new URLSearchParams(requete).get("v") };
 }
 function useRoute() {
   const [r, setR] = useState(parseHash);
@@ -136,11 +147,39 @@ function Toasts({ items, fermer }) {
 function BandeauInfo() {
   const { config } = useBoutique();
   const l = config.livraison;
-  const msg = !config.ouverte
-    ? "La boutique ne prend pas de commandes pour le moment."
+  const msg = config.plateforme ? "Les produits de toutes nos boutiques · paiement à la livraison ou par Mobile Money"
+    : !config.ouverte ? "Cette boutique ne prend pas de commandes pour le moment."
     : l.gratuite_des > 0 ? `Livraison offerte dès ${fmt(l.gratuite_des)} d'achat${l.zone ? " · " + l.zone : ""}`
     : l.zone ? `Livraison : ${l.zone}` : "Paiement à la livraison ou par Mobile Money";
   return <div className={cx("annonce", !config.ouverte && "fermee")}>{msg}</div>;
+}
+
+/* « Mon espace » : accès au tableau de bord de l'administrateur ou du vendeur */
+function MonEspace() {
+  const [ouvert, setOuvert] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!ouvert) return;
+    const h = (e) => { if (!ref.current?.contains(e.target)) setOuvert(false); };
+    const k = (e) => e.key === "Escape" && setOuvert(false);
+    document.addEventListener("mousedown", h); addEventListener("keydown", k);
+    return () => { document.removeEventListener("mousedown", h); removeEventListener("keydown", k); };
+  }, [ouvert]);
+  return (
+    <div className="v-espace" ref={ref}>
+      <button className="btn btn-primary v-espace-btn" onClick={() => setOuvert((o) => !o)} aria-haspopup="menu" aria-expanded={ouvert}>
+        <LayoutDashboard size={16} /><span>Mon espace</span><ChevronDown size={14} />
+      </button>
+      {ouvert && (
+        <div className="v-espace-menu" role="menu">
+          <a role="menuitem" href="/admin/?espace=admin"><ShieldCheck size={17} /><span><b>Mon espace administrateur</b><small>Produits, stocks, vendeurs, finances</small></span></a>
+          <a role="menuitem" href="/admin/?espace=vendeur"><User size={17} /><span><b>Mon espace vendeur</b><small>Mes ventes et mon lien de promotion</small></span></a>
+          <div className="pop-sep" />
+          <a role="menuitem" href="/admin/?creer=1"><UserPlus size={17} /><span><b>Créer mon espace</b><small>Ouvrir ma boutique sur la plateforme</small></span></a>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function EnTete() {
@@ -151,7 +190,7 @@ function EnTete() {
       <div className="v-header-in">
         <a href="#/" className="v-logo" onClick={() => setRecherche("")}>
           <span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span>
-          <span className="truncate">{config.boutique.nom}</span>
+          <span className="truncate">{PLATEFORME}</span>
         </a>
         <div className={cx("v-search", chercher && "ouvert")}>
           <Search size={16} className="input-icon" />
@@ -161,6 +200,7 @@ function EnTete() {
         <nav className="v-actions">
           <button className="v-icon only-mobile" onClick={() => setChercher((c) => !c)} aria-label="Rechercher"><Search size={20} /></button>
           <a href="#/mes-commandes" className="v-lien hide-sm"><Receipt size={17} />Mes commandes</a>
+          <MonEspace />
           <button className={cx("v-icon v-panier", bump && "bump")} onClick={ouvrirPanier} aria-label={`Panier, ${nbArticles} article(s)`}>
             <ShoppingCart size={21} />
             {nbArticles > 0 && <span className="v-compteur">{nbArticles}</span>}
@@ -198,8 +238,8 @@ function PiedDePage() {
         </div>
       </div>
       <div className="v-footer-bas">
-        <span>© {new Date().getFullYear()} {b.nom}</span>
-        <a href="/admin/">Espace vendeur</a>
+        <span>© {new Date().getFullYear()} {PLATEFORME}{config.plateforme ? "" : " · " + b.nom}</span>
+        <span className="row" style={{ gap: 14, flexWrap: "wrap" }}><a href="/admin/?espace=admin">Mon espace administrateur</a><a href="/admin/?espace=vendeur">Mon espace vendeur</a><a href="/admin/?creer=1">Créer mon espace</a></span>
       </div>
     </footer>
   );
@@ -221,6 +261,7 @@ function CarteProduit({ p, i }) {
       </a>
       <div className="v-carte-corps">
         <a href={`#/produit/${encodeURIComponent(p.id)}`} className="v-carte-nom">{p.nom}</a>
+        <a href={`#/boutique/${p.boutique_slug}`} className="v-carte-boutique"><Store size={12} />{p.boutique_nom}</a>
         {p.description && <p className="v-carte-desc">{p.description}</p>}
         <div className="v-carte-bas">
           <span className="v-prix">{fmt(p.prix)}{p.remise > 0 && <s className="v-prix-barre">{fmt(p.prix_normal)}</s>}</span>
@@ -232,8 +273,11 @@ function CarteProduit({ p, i }) {
   );
 }
 
-function PageAccueil() {
-  const { config, produits, recherche, setRecherche } = useBoutique();
+function PageAccueil({ slug }) {
+  const { config, boutiques, recherche, setRecherche, ...reste } = useBoutique();
+  // Page d'une boutique : uniquement ses produits ; accueil : ceux de tous les administrateurs
+  const produits = slug ? reste.produits.filter((p) => p.boutique_slug === slug) : reste.produits;
+  const avecProduits = boutiques.filter((x) => reste.produits.some((p) => p.boutique_id === x.id));
   const [tri, setTri] = useState("nouveautes");
   const [dispo, setDispo] = useState(false);
   const catalogueRef = useRef(null);
@@ -248,24 +292,46 @@ function PageAccueil() {
   const b = config.boutique;
   const promos = produits.filter((p) => p.remise > 0 && p.disponible);
 
+  if (slug && config.plateforme) {
+    return <div className="v-section"><div className="empty"><div className="empty-icon"><Store size={26} /></div><h3>Boutique introuvable</h3><p>Cette adresse ne correspond à aucune boutique.</p><a className="btn btn-primary" href="#/">Voir toutes les boutiques</a></div></div>;
+  }
+
   return (
     <>
       {!recherche && (
         <section className="v-hero">
           <div className="v-hero-in">
-            <span className="v-hero-tag"><Sparkles size={14} />Commandez en ligne</span>
-            <h1>{b.slogan || `Bienvenue chez ${b.nom}`}</h1>
-            <p>{config.livraison.zone ? `Livraison ${config.livraison.zone}. ` : ""}Payez à la livraison ou par Mobile Money{config.paiements.en_ligne ? ", en toute sécurité" : ""}.</p>
+            {slug ? <a className="v-retour" href="#/"><ArrowLeft size={16} />Toutes les boutiques</a> : null}
+            <span className="v-hero-tag">{slug ? <><Store size={14} />Boutique</> : <><Sparkles size={14} />Commandez en ligne</>}</span>
+            <h1>{slug ? b.nom : `Bienvenue sur ${PLATEFORME}`}</h1>
+            <p>{slug
+              ? <>{b.slogan ? b.slogan + ". " : ""}{config.livraison.zone ? `Livraison ${config.livraison.zone}. ` : ""}Payez à la livraison ou par Mobile Money{config.paiements.en_ligne ? ", en toute sécurité" : ""}.</>
+              : <>Tous les produits de nos {avecProduits.length > 1 ? avecProduits.length + " boutiques" : "boutiques"} au même endroit. Payez à la livraison ou par Mobile Money.</>}</p>
             <div className="row" style={{ flexWrap: "wrap", gap: 10 }}>
               <Btn variant="brand" size="lg" iconRight={ArrowRight} onClick={() => catalogueRef.current?.scrollIntoView({ behavior: "smooth" })}>Voir les produits</Btn>
               {b.whatsapp && <a className="btn btn-secondary btn-lg" href={`https://wa.me/${telInternational(b.whatsapp)}`} target="_blank" rel="noopener"><MessageSquare size={16} /><span>Nous écrire</span></a>}
             </div>
           </div>
           <div className="v-garanties">
-            <div><Truck size={20} /><span><b>Livraison</b>{config.livraison.frais ? ` ${fmt(config.livraison.frais)}` : " offerte"}{config.livraison.gratuite_des > 0 ? `, offerte dès ${fmt(config.livraison.gratuite_des)}` : ""}</span></div>
+            <div><Truck size={20} /><span><b>Livraison</b>{slug ? <>{config.livraison.frais ? ` ${fmt(config.livraison.frais)}` : " offerte"}{config.livraison.gratuite_des > 0 ? `, offerte dès ${fmt(config.livraison.gratuite_des)}` : ""}</> : " à domicile, selon la boutique"}</span></div>
             <div><Smartphone size={20} /><span><b>Mobile Money</b> Orange, MTN, Moov, Wave</span></div>
             <div><Banknote size={20} /><span><b>Paiement à la livraison</b> en espèces</span></div>
             <div><Receipt size={20} /><span><b>Ticket de caisse</b> téléchargeable</span></div>
+          </div>
+        </section>
+      )}
+
+      {!slug && !recherche && avecProduits.length > 1 && (
+        <section className="v-section v-boutiques">
+          <div className="v-section-tete"><h2>Nos boutiques</h2></div>
+          <div className="v-boutiques-liste">
+            {avecProduits.map((x) => (
+              <a key={x.id} href={`#/boutique/${x.slug}`} className="v-boutique-carte">
+                <span className="v-boutique-logo">{x.boutique.nom.trim().slice(0, 1).toUpperCase()}</span>
+                <span className="grow"><b className="truncate">{x.boutique.nom}</b><small>{reste.produits.filter((p) => p.boutique_id === x.id).length} produit(s){x.ouverte ? "" : " · fermée"}</small></span>
+                <ChevronRight size={16} />
+              </a>
+            ))}
           </div>
         </section>
       )}
@@ -279,7 +345,7 @@ function PageAccueil() {
 
       <section className="v-section" ref={catalogueRef}>
         <div className="v-section-tete">
-          <h2>{recherche ? `Résultats pour « ${recherche} »` : "Nos produits"}</h2>
+          <h2>{recherche ? `Résultats pour « ${recherche} »` : slug ? `Les produits de ${b.nom}` : "Tous les produits"}</h2>
           <div className="row" style={{ flexWrap: "wrap" }}>
             <label className="checkbox"><input type="checkbox" checked={dispo} onChange={(e) => setDispo(e.target.checked)} /><span className="checkbox-box"><Check size={12} strokeWidth={3} /></span><span>En stock uniquement</span></label>
             <div className="select-wrap">
@@ -293,7 +359,7 @@ function PageAccueil() {
           </div>
         </div>
         {liste.length === 0 ? (
-          <div className="empty"><div className="empty-icon"><Search size={26} /></div><h3>Aucun produit trouvé</h3><p>{recherche ? "Essayez un autre mot." : "Le catalogue sera bientôt disponible."}</p>{recherche && <Btn onClick={() => setRecherche("")}>Voir tous les produits</Btn>}</div>
+          <div className="empty"><div className="empty-icon"><Search size={26} /></div><h3>Aucun produit trouvé</h3><p>{recherche ? "Essayez un autre mot." : slug ? "Cette boutique n'a pas encore publié de produit." : "Aucun produit n'est encore en vente. Vous vendez ? Créez votre espace et publiez vos produits."}</p>{recherche ? <Btn onClick={() => setRecherche("")}>Voir tous les produits</Btn> : !slug && <a className="btn btn-primary" href="/admin/?creer=1">Créer mon espace</a>}</div>
         ) : (
           <div className="v-grille">{liste.map((p, i) => <CarteProduit key={p.id} p={p} i={i} />)}</div>
         )}
@@ -319,6 +385,7 @@ function PageProduit({ id }) {
       <div className="v-fiche">
         <div className="v-fiche-media"><ImageProduit p={p} /></div>
         <div className="v-fiche-infos">
+          <a href={`#/boutique/${p.boutique_slug}`} className="v-carte-boutique"><Store size={13} />Vendu par {p.boutique_nom}</a>
           <h1>{p.nom}</h1>
           <div className="v-fiche-prix">{fmt(p.prix)}{p.remise > 0 && <><s className="v-prix-barre">{fmt(p.prix_normal)}</s><span className="v-remise">−{p.remise} %</span></>}</div>
           {p.remise > 0 && p.promo_fin && <div className="subtle">Offre valable jusqu'au {new Date(p.promo_fin).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}</div>}
@@ -373,7 +440,7 @@ function calculTotaux(lignes, config) {
 }
 
 function TiroirPanier() {
-  const { panierOuvert, fermerPanier, lignes, changerQuantite, retirer, config, go } = useBoutique();
+  const { panierOuvert, fermerPanier, lignes, changerQuantite, retirer, configPanier: config, go } = useBoutique();
   const [monte, setMonte] = useState(panierOuvert);
   const [ferme, setFerme] = useState(false);
   useEffect(() => {
@@ -395,7 +462,7 @@ function TiroirPanier() {
     <div className={cx("overlay v-tiroir-overlay", ferme && "closing")}>
       <div className="backdrop" onMouseDown={fermerPanier} />
       <aside className="v-tiroir" role="dialog" aria-label="Panier">
-        <div className="modal-head"><h2>Votre panier</h2><button className="icon-btn" onClick={fermerPanier} aria-label="Fermer"><X size={18} /></button></div>
+        <div className="modal-head"><h2>Votre panier{lignes.length ? <small className="v-panier-boutique"> · {config.boutique.nom}</small> : null}</h2><button className="icon-btn" onClick={fermerPanier} aria-label="Fermer"><X size={18} /></button></div>
         {lignes.length === 0 ? (
           <div className="empty" style={{ flex: 1 }}>
             <div className="empty-icon"><ShoppingCart size={26} /></div>
@@ -447,7 +514,7 @@ function TiroirPanier() {
    Commande : coordonnées, livraison, paiement
    ===================================================================== */
 function PageCommander() {
-  const { lignes, config, go, viderPanier, recharger, toast, synchroniserPanier } = useBoutique();
+  const { lignes, configPanier: config, go, viderPanier, recharger, toast, synchroniserPanier } = useBoutique();
   const memo = lire(CLIENT_KEY, {});
   const [c, setC] = useState({ nom: memo.nom || "", telephone: memo.telephone || "", email: memo.email || "", adresse: memo.adresse || "", ville: memo.ville || "", instructions: "" });
   const modes = [
@@ -502,8 +569,11 @@ function PageCommander() {
     ecrire(CLIENT_KEY, { nom: c.nom, telephone: c.telephone, email: c.email, adresse: c.adresse, ville: c.ville, consentement });
     try {
       const r = await api("POST", "/api/boutique/commandes", {
+        boutique: config.id,
+        // Commande arrivée par le lien de promotion d'un vendeur de cette boutique
+        vendeur: lire(REF_KEY, {})[config.id] || undefined,
         client: { ...c, consentement },
-        lignes: lignes.map((l) => ({ pack_id: l.p.id, quantite: l.quantite })),
+        lignes: lignes.map((l) => ({ pack_id: l.p.pid, quantite: l.quantite })),
         paiement: mode === "transfert" ? { mode, operateur: op, telephone: tr.telephone, reference: tr.reference } : { mode },
       });
       ecrire(COMMANDES_KEY, [{ jeton: r.jeton, numero: r.numero, date: new Date().toISOString() }, ...lire(COMMANDES_KEY, []).filter((o) => o.jeton !== r.jeton)].slice(0, 30));
@@ -530,6 +600,7 @@ function PageCommander() {
       <div className="v-checkout-form">
         <button type="button" className="v-retour" onClick={() => go("")}><ArrowLeft size={16} />Continuer mes achats</button>
         <h1 className="v-titre">Finaliser la commande</h1>
+        <p className="muted" style={{ marginTop: -8, marginBottom: 14 }}><Store size={14} style={{ verticalAlign: -2 }} /> Commande passée auprès de <b>{config.boutique.nom}</b></p>
         {erreurGlobale && <div className="banner banner-critical"><AlertCircle size={16} /><div>{erreurGlobale}</div></div>}
 
         <section className="card v-etape">
@@ -898,7 +969,7 @@ function PageMesCommandes() {
    ===================================================================== */
 function App() {
   const [route, go] = useRoute();
-  const [config, setConfig] = useState(null);
+  const [boutiques, setBoutiques] = useState(null);
   const [produits, setProduits] = useState([]);
   const [erreur, setErreur] = useState("");
   const [panier, setPanier] = useState(() => lire(PANIER_KEY, []));
@@ -915,9 +986,10 @@ function App() {
   const fermerToast = useCallback((id) => setToasts((s) => s.filter((x) => x.id !== id)), []);
 
   const recharger = useCallback(async () => {
-    const [c, p] = await Promise.all([api("GET", "/api/boutique/config"), api("GET", "/api/boutique/produits")]);
-    setConfig(c); setProduits(p);
-    document.title = c.boutique.nom + (c.boutique.slogan ? " — " + c.boutique.slogan : "");
+    const [b, liste] = await Promise.all([api("GET", "/api/boutique/boutiques"), api("GET", "/api/boutique/produits")]);
+    // id = clé unique sur la plateforme ; pid = identifiant du produit dans sa boutique
+    const p = liste.map((x) => ({ ...x, pid: x.id, id: x.cle }));
+    setBoutiques(b); setProduits(p);
     return p;
   }, []);
   useEffect(() => { recharger().catch((e) => setErreur(e.message)); }, []);
@@ -931,8 +1003,24 @@ function App() {
   const nbArticles = lignes.reduce((s, l) => s + l.quantite, 0);
   const quantiteDans = (id) => panier.find((l) => l.id === id)?.quantite || 0;
 
+  // Réglages en vigueur : ceux de la boutique consultée (page boutique, fiche produit) et ceux de la boutique du panier
+  const configDe = (id) => (boutiques || []).find((b) => b.id === id) || CONFIG_PLATEFORME;
+  const boutiqueVue = route.page === "boutique" ? (boutiques || []).find((b) => b.slug === route.id)?.id
+    : route.page === "produit" ? produits.find((p) => p.id === route.id)?.boutique_id : null;
+  const config = configDe(boutiqueVue);
+  const configPanier = configDe(lignes[0]?.p.boutique_id);
+  useEffect(() => { document.title = config.plateforme ? `${PLATEFORME} — toutes nos boutiques` : `${config.boutique.nom} — ${PLATEFORME}`; }, [config.id, config.boutique.nom]);
+  // Arrivée par le lien de promotion d'un vendeur : on s'en souvient pour lui attribuer la commande
+  useEffect(() => {
+    if (route.page === "boutique" && route.vendeur && boutiqueVue && /^[A-Za-z0-9_-]{6,40}$/.test(route.vendeur)) ecrire(REF_KEY, { ...lire(REF_KEY, {}), [boutiqueVue]: route.vendeur });
+  }, [route.page, route.vendeur, boutiqueVue]);
+
   const ajouter = (p, q, silencieux) => {
+    // Une commande = une boutique : changer de boutique remplace le panier
+    const autre = lignes[0] && lignes[0].p.boutique_id !== p.boutique_id ? lignes[0].p.boutique_nom : null;
+    if (autre && !window.confirm(`Votre panier contient des articles de « ${autre} ».\n\nUne commande ne concerne qu'une seule boutique : vider le panier et ajouter cet article de « ${p.boutique_nom} » ?`)) return;
     setPanier((s) => {
+      if (autre) return [{ id: p.id, quantite: Math.min(p.stock, q) }];
       const actuel = s.find((l) => l.id === p.id)?.quantite || 0;
       const nouvelle = Math.min(p.stock, actuel + q);
       return actuel ? s.map((l) => (l.id === p.id ? { ...l, quantite: nouvelle } : l)) : [...s, { id: p.id, quantite: nouvelle }];
@@ -943,13 +1031,13 @@ function App() {
   const changerQuantite = (id, q) => setPanier((s) => s.map((l) => (l.id === id ? { ...l, quantite: q } : l)));
   const retirer = (id) => setPanier((s) => s.filter((l) => l.id !== id));
   const viderPanier = () => setPanier([]);
-  const synchroniserPanier = (indispo) => setPanier((s) => s.map((l) => { const x = indispo.find((i) => i.pack_id === l.id); return x ? { ...l, quantite: x.disponible } : l; }).filter((l) => l.quantite > 0));
+  const synchroniserPanier = (indispo) => setPanier((s) => s.map((l) => { const x = indispo.find((i) => l.id.endsWith("." + i.pack_id)); return x ? { ...l, quantite: x.disponible } : l; }).filter((l) => l.quantite > 0));
 
-  if (erreur) return <div className="splash"><div className="empty"><div className="empty-icon"><AlertTriangle size={26} /></div><h3>Boutique momentanément indisponible</h3><p>{erreur}</p><Btn variant="primary" onClick={() => location.reload()}>Réessayer</Btn></div></div>;
-  if (!config) return <div className="splash"><span className="brand-mark splash-mark"><ShoppingBag size={22} strokeWidth={2.4} /></span><span className="spinner" /></div>;
+  if (erreur) return <div className="splash"><div className="empty"><div className="empty-icon"><AlertTriangle size={26} /></div><h3>Site momentanément indisponible</h3><p>{erreur}</p><Btn variant="primary" onClick={() => location.reload()}>Réessayer</Btn></div></div>;
+  if (!boutiques) return <div className="splash"><span className="brand-mark splash-mark"><ShoppingBag size={22} strokeWidth={2.4} /></span><span className="spinner" /></div>;
 
   const ctx = {
-    config, produits, route, go, lignes, nbArticles, quantiteDans, ajouter, changerQuantite, retirer, viderPanier, synchroniserPanier, recharger,
+    config, configPanier, boutiques, produits, route, go, lignes, nbArticles, quantiteDans, ajouter, changerQuantite, retirer, viderPanier, synchroniserPanier, recharger,
     panierOuvert, ouvrirPanier: () => setPanierOuvert(true), fermerPanier: () => setPanierOuvert(false), recherche, setRecherche, toast, bump,
   };
 
@@ -961,6 +1049,7 @@ function App() {
     case "recu": page = <PageSuivi jeton={route.id} key={"r" + route.id} ticketSeul />; break;
     case "mes-commandes": page = <PageMesCommandes />; break;
     case "stop": page = <PageStop jeton={route.id} />; break;
+    case "boutique": page = <PageAccueil slug={route.id} />; break;
     default: page = <PageAccueil />;
   }
 
@@ -973,7 +1062,7 @@ function App() {
       <TiroirPanier />
       {nbArticles > 0 && route.page !== "commander" && (
         <button className="v-barre-panier only-mobile" onClick={() => setPanierOuvert(true)}>
-          <ShoppingCart size={18} /><span>{nbArticles} article{nbArticles > 1 ? "s" : ""}</span><b className="num">{fmt(calculTotaux(lignes, config).sousTotal)}</b><ArrowRight size={16} />
+          <ShoppingCart size={18} /><span>{nbArticles} article{nbArticles > 1 ? "s" : ""}</span><b className="num">{fmt(calculTotaux(lignes, configPanier).sousTotal)}</b><ArrowRight size={16} />
         </button>
       )}
       <Toasts items={toasts} fermer={fermerToast} />

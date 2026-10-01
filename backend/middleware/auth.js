@@ -21,12 +21,17 @@ function authRequired(req, res, next) {
   } catch (e) {
     return res.status(401).json({ erreur: "Session expirée, reconnectez-vous" });
   }
-  // Le compte doit toujours exister ; son rôle actuel prime sur celui du jeton
+  // Le jeton désigne l'espace (boutique) du compte : toute la suite de la requête s'y exécute
   const db = require("../db");
-  const user = db.prepare("SELECT id, nom, telephone, email, role FROM utilisateurs WHERE id = ?").get(charge.id);
-  if (!user) return res.status(401).json({ erreur: "Compte introuvable, reconnectez-vous" });
-  req.user = user;
-  next();
+  if (!charge.b || !db.boutiqueParRef(charge.b)) return res.status(401).json({ erreur: "Session expirée, reconnectez-vous" });
+  db.dansEspace(charge.b, () => {
+    // Le compte doit toujours exister ; son rôle actuel prime sur celui du jeton
+    const user = db.prepare("SELECT id, nom, telephone, email, role FROM utilisateurs WHERE id = ? AND actif = 1").get(charge.id);
+    if (!user) return res.status(401).json({ erreur: "Compte introuvable, reconnectez-vous" });
+    req.user = user;
+    req.boutique = db.espaceCourant();
+    next();
+  });
 }
 
 function adminOnly(req, res, next) {
@@ -36,8 +41,8 @@ function adminOnly(req, res, next) {
   next();
 }
 
-function signToken(user) {
-  return jwt.sign({ id: user.id, nom: user.nom, telephone: user.telephone, email: user.email, role: user.role }, SECRET, {
+function signToken(user, boutiqueId) {
+  return jwt.sign({ id: user.id, b: boutiqueId, nom: user.nom, telephone: user.telephone, email: user.email, role: user.role }, SECRET, {
     expiresIn: "7d",
   });
 }

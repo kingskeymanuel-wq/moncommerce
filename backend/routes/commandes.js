@@ -33,6 +33,14 @@ function enrichir(cmd) {
 }
 const lire = (id) => db.prepare("SELECT * FROM commandes WHERE id = ?").get(id);
 
+// Un vendeur n'accède qu'à ses commandes : ses ventes en caisse et celles arrivées par son lien
+const aMoi = (cmd, req) => req.user?.role === "admin" || lignesCommande(cmd).some((v) => v.vendeur_id === req.user?.id);
+router.param("id", (req, res, next, id) => {
+  const cmd = lire(id);
+  if (cmd && !aMoi(cmd, req)) return res.status(403).json({ erreur: "Cette commande est suivie par un autre vendeur" });
+  next();
+});
+
 // GET /api/commandes?statut=&canal=
 router.get("/", (req, res) => {
   const { statut, canal } = req.query;
@@ -41,7 +49,7 @@ router.get("/", (req, res) => {
   if (statut) { sql += " AND statut = ?"; params.push(statut); }
   if (canal) { sql += " AND canal = ?"; params.push(canal); }
   sql += " ORDER BY maj_le DESC";
-  res.json(db.prepare(sql).all(...params).map(enrichir));
+  res.json(db.prepare(sql).all(...params).filter((c) => aMoi(c, req)).map(enrichir));
 });
 
 // GET /api/commandes/:id
@@ -70,7 +78,8 @@ router.post("/statut", (req, res) => {
   if (!STATUTS_VALIDES.includes(statut)) {
     return res.status(400).json({ erreur: `statut doit être l'un de : ${STATUTS_VALIDES.join(", ")}` });
   }
-  const modifiees = db.transaction(() => ids.map((id) => changerStatut(String(id), statut, req.user?.id)).filter(Boolean))();
+  const autorises = ids.map(String).filter((id) => { const c = lire(id); return c && aMoi(c, req); });
+  const modifiees = db.transaction(() => autorises.map((id) => changerStatut(id, statut, req.user?.id)).filter(Boolean))();
   res.json({ modifiees: modifiees.length });
 });
 
