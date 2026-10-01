@@ -1,6 +1,8 @@
 const express = require("express");
 const { nanoid } = require("nanoid");
 const { validerPaiement } = require("../lib/paiements");
+const { mouvement } = require("../lib/stock");
+const { prixEffectif } = require("../lib/prix");
 const db = require("../db");
 const { idOuNouveau, versIso, prochainNumero, ajouterEvenement } = require("../lib/outils");
 const router = express.Router();
@@ -49,7 +51,8 @@ router.post("/", (req, res) => {
   if (pack.stock < qte) {
     return res.status(409).json({ erreur: `Stock insuffisant pour ${pack.nom} (disponible : ${pack.stock})` });
   }
-  const paiement = validerPaiement(req.body, qte * pack.prix);
+  const prix = prixEffectif(pack); // prix promotionnel si une promotion est en cours
+  const paiement = validerPaiement(req.body, qte * prix);
   if (paiement.erreur) return res.status(400).json({ erreur: paiement.erreur });
 
   const venteId = idOuNouveau(req.body.id);
@@ -58,19 +61,20 @@ router.post("/", (req, res) => {
 
   db.transaction(() => {
     const maintenant = new Date().toISOString();
+    const numero = prochainNumero();
     db.prepare(
       `INSERT INTO ventes (id, commande_id, client_id, pack_id, vendeur_id, quantite, prix_unitaire, mode_paiement, statut_paiement,
          montant_recu, reference_paiement, telephone_paiement, paye_le, date_vente) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
-      venteId, commandeId, client_id, pack_id, req.user?.id || null, qte, pack.prix, paiement.mode, paiement.statut,
+      venteId, commandeId, client_id, pack_id, req.user?.id || null, qte, prix, paiement.mode, paiement.statut,
       paiement.montant_recu, paiement.reference, paiement.telephone, paiement.statut === "payee" ? maintenant : null, maintenant
     );
 
-    db.prepare("UPDATE packs SET stock = stock - ? WHERE id = ?").run(qte, pack_id);
 
     db.prepare(
       "INSERT INTO commandes (id, vente_id, numero, statut, adresse_livraison, jeton_recu, maj_le) VALUES (?, ?, ?, 'en_attente', ?, ?, ?)"
-    ).run(commandeId, venteId, prochainNumero(), adresse_livraison ?? client.ville ?? "", nanoid(24), maintenant);
+    ).run(commandeId, venteId, numero, adresse_livraison ?? client.ville ?? "", nanoid(24), maintenant);
+    mouvement(pack_id, -qte, "vente", { reference: numero, auteurId: req.user?.id });
     ajouterEvenement(commandeId, { statut: "en_attente", auteurId: req.user?.id, date: maintenant });
   })();
 
@@ -84,7 +88,7 @@ router.delete("/:id", (req, res) => {
   if (!vente) return res.status(404).json({ erreur: "Vente introuvable" });
   const cmd = db.prepare("SELECT * FROM commandes WHERE id = ? OR vente_id = ?").get(vente.commande_id, vente.id);
   db.transaction(() => {
-    if (cmd?.statut !== "annulee") db.prepare("UPDATE packs SET stock = stock + ? WHERE id = ?").run(vente.quantite, vente.pack_id);
+    if (cmd?.statut !== "annulee") mouvement(vente.pack_id, vente.quantite, "suppression", { reference: cmd?.numero, auteurId: req.user?.id });
     if (cmd && cmd.vente_id === vente.id) {
       const autre = db.prepare("SELECT id FROM ventes WHERE commande_id = ? AND id <> ? LIMIT 1").get(cmd.id, vente.id);
       if (autre) db.prepare("UPDATE commandes SET vente_id = ? WHERE id = ?").run(autre.id, cmd.id);

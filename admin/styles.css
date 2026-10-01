@@ -1459,3 +1459,25 @@ code { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .92em; 
 .recu-public-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
 .recu-public-head .brand-mark { width: 38px; height: 38px; border-radius: 11px; }
 .canal-web { color: var(--magic-dot); margin-left: 6px; vertical-align: -2px; }
+
+/* ---------- v5 : promotions, stocks, marketing, ticket PDF ---------- */
+.prix-barre { text-decoration: line-through; color: var(--text-3); font-weight: 400; font-size: .86em; margin-left: 6px; }
+div.prix-barre { margin-left: 0; }
+.product-card .pc-promo { position: absolute; top: 10px; right: 10px; background: var(--critical-solid); color: #fff; font-weight: 700; font-size: 12px; padding: 3px 8px; border-radius: 999px; }
+.product-card:has(.pc-promo) .pc-actions { top: 40px; }
+.liste-contenu { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.liste-contenu li { display: flex; align-items: center; gap: 8px; }
+.liste-contenu li svg { color: var(--success-dot); flex-shrink: 0; }
+.ticket-pdf { width: 100%; height: min(62vh, 560px); border: 1px solid var(--border); border-radius: var(--radius-lg, 12px); background: #fff; margin-bottom: 12px; }
+.pdf-attente { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 28px 12px; color: var(--text-3); }
+.bulle-sms { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px 14px 14px 4px; padding: 10px 12px; white-space: pre-wrap; line-height: 1.45; font-size: 13.5px; }
+.promo-liste { display: grid; gap: 6px; max-height: 260px; overflow-y: auto; padding: 2px; }
+.promo-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; transition: background .15s, border-color .15s; }
+.promo-item:hover { background: var(--hover); }
+.promo-item.on { border-color: var(--brand); background: var(--brand-soft); }
+.segments { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.segment { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
+.segment p { margin: 0; flex: 1; }
+.segment .btn { align-self: flex-start; }
+@media (max-width: 1100px) { .segments { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .segments { grid-template-columns: 1fr; } .ticket-pdf { height: 420px; } }

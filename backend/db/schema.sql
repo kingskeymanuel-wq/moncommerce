@@ -125,3 +125,51 @@ CREATE INDEX IF NOT EXISTS idx_ventes_pack     ON ventes(pack_id);
 CREATE INDEX IF NOT EXISTS idx_commandes_vente ON commandes(vente_id);
 CREATE INDEX IF NOT EXISTS idx_commandes_statut ON commandes(statut);
 CREATE INDEX IF NOT EXISTS idx_evenements_commande ON commande_evenements(commande_id);
+
+-- ============================================================
+-- v5 : stocks, promotions, marketing
+-- ============================================================
+
+-- Journal de tous les mouvements de stock (ventes, réceptions, inventaires…)
+CREATE TABLE IF NOT EXISTS mouvements_stock (
+  id           TEXT PRIMARY KEY,
+  pack_id      TEXT NOT NULL,
+  delta        INTEGER NOT NULL,          -- + entrée / − sortie
+  stock_apres  INTEGER,
+  motif        TEXT NOT NULL,             -- vente | vente_en_ligne | annulation | retablissement | suppression | reception | inventaire | casse | retour | ajustement | stock_initial
+  note         TEXT,
+  reference    TEXT,                      -- n° de commande, fournisseur…
+  auteur_id    TEXT,
+  cree_le      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mouvements_pack ON mouvements_stock(pack_id, cree_le);
+
+-- Campagnes de messages aux clients (SMS / e-mail)
+CREATE TABLE IF NOT EXISTS campagnes (
+  id                TEXT PRIMARY KEY,
+  titre             TEXT NOT NULL,
+  type              TEXT NOT NULL DEFAULT 'libre',   -- promotion | nouveautes | bonne_semaine | libre
+  message           TEXT NOT NULL,
+  canaux            TEXT NOT NULL DEFAULT 'sms',     -- sms,email
+  audience          TEXT NOT NULL DEFAULT 'tous',    -- tous | vip | fideles | inactifs
+  automatique       INTEGER NOT NULL DEFAULT 0,      -- 1 = envoi hebdomadaire automatique
+  statut            TEXT NOT NULL DEFAULT 'en_cours', -- en_cours | envoyee
+  nb_destinataires  INTEGER NOT NULL DEFAULT 0,
+  nb_envoyes        INTEGER NOT NULL DEFAULT 0,
+  nb_echecs         INTEGER NOT NULL DEFAULT 0,
+  simule            INTEGER NOT NULL DEFAULT 0,      -- 1 = aucun fournisseur configuré
+  auteur_id         TEXT,
+  cree_le           TEXT NOT NULL,
+  envoyee_le        TEXT
+);
+CREATE TABLE IF NOT EXISTS campagne_envois (
+  id            TEXT PRIMARY KEY,
+  campagne_id   TEXT NOT NULL REFERENCES campagnes(id) ON DELETE CASCADE,
+  client_id     TEXT,
+  canal         TEXT NOT NULL,          -- sms | email
+  destinataire  TEXT NOT NULL,
+  statut        TEXT NOT NULL,          -- envoye | simule | echec
+  erreur        TEXT,
+  cree_le       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_envois_campagne ON campagne_envois(campagne_id);

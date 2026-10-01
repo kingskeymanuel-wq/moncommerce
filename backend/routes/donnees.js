@@ -15,9 +15,12 @@ const router = express.Router();
  * restent visibles (affichées « client supprimé » / « produit supprimé »).
  */
 router.get("/", (req, res) => {
+  const admin = req.user?.role === "admin";
   res.json({
+    role: req.user?.role,
     clients: db.prepare("SELECT * FROM clients WHERE supprime = 0 ORDER BY cree_le").all().map((c) => ({ ...c, cree_le: versIso(c.cree_le) })),
-    packs: db.prepare("SELECT * FROM packs WHERE supprime = 0 ORDER BY cree_le").all().map((p) => ({ ...p, cree_le: versIso(p.cree_le) })),
+    // Les vendeurs ne voient ni les coûts d'achat ni les dépenses de la boutique
+    packs: db.prepare("SELECT * FROM packs WHERE supprime = 0 ORDER BY cree_le").all().map((p) => ({ ...p, cout: admin ? p.cout : null, cree_le: versIso(p.cree_le) })),
     ventes: db
       .prepare("SELECT v.*, u.nom AS vendeur_nom FROM ventes v LEFT JOIN utilisateurs u ON u.id = v.vendeur_id ORDER BY v.date_vente")
       .all()
@@ -27,7 +30,7 @@ router.get("/", (req, res) => {
       .prepare("SELECT id, commande_id, type, statut, texte, cree_le FROM commande_evenements ORDER BY cree_le")
       .all()
       .map((e) => ({ ...e, cree_le: versIso(e.cree_le) })),
-    investissements: db.prepare("SELECT * FROM investissements ORDER BY date_invest DESC").all(),
+    investissements: admin ? db.prepare("SELECT * FROM investissements ORDER BY date_invest DESC").all() : [],
     boutique: lireBoutique(),
   });
 });
@@ -49,14 +52,14 @@ router.post("/import", adminOnly, (req, res) => {
     db.transaction(() => {
       db.exec("DELETE FROM paiements_en_ligne; DELETE FROM commande_evenements; DELETE FROM commandes; DELETE FROM ventes; DELETE FROM packs; DELETE FROM clients; DELETE FROM investissements;");
 
-      const insClient = db.prepare("INSERT INTO clients (id, nom, telephone, email, ville, statut, notes, supprime, cree_le) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-      const insPack = db.prepare("INSERT INTO packs (id, nom, description, prix, cout, stock, sku, emoji, teinte, actif, supprime, cree_le, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+      const insClient = db.prepare("INSERT INTO clients (id, nom, telephone, email, ville, statut, notes, supprime, cree_le, consentement_marketing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+      const insPack = db.prepare("INSERT INTO packs (id, nom, description, prix, cout, stock, sku, emoji, teinte, actif, supprime, cree_le, image, contenu, prix_promo, promo_fin, seuil_alerte) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
       const clientIds = new Set();
       const packIds = new Set();
 
       for (const c of d.clients) {
         const id = idOuNouveau(c.id);
-        insClient.run(id, c.nom || "Sans nom", c.telephone || "", c.email || null, c.ville || null, c.statut === "VIP" ? "VIP" : "Standard", c.notes || null, c.supprime ? 1 : 0, c.cree_le || maintenant);
+        insClient.run(id, c.nom || "Sans nom", c.telephone || "", c.email || null, c.ville || null, c.statut === "VIP" ? "VIP" : "Standard", c.notes || null, c.supprime ? 1 : 0, c.cree_le || maintenant, c.consentement_marketing ? 1 : 0);
         clientIds.add(id);
       }
       for (const p of d.packs) {
@@ -64,7 +67,8 @@ router.post("/import", adminOnly, (req, res) => {
         let image = null;
         try { image = resoudreImage(p.image, null, id); } catch { /* image illisible : ignorée */ }
         insPack.run(id, p.nom || "Produit", p.description || "", Number(p.prix) || 0, p.cout == null ? null : Number(p.cout), Math.max(0, Math.round(Number(p.stock) || 0)),
-          p.sku || null, p.emoji || "📦", Number(p.teinte) || 0, p.actif === 0 || p.actif === false ? 0 : 1, p.supprime ? 1 : 0, p.cree_le || maintenant, image);
+          p.sku || null, p.emoji || "📦", Number(p.teinte) || 0, p.actif === 0 || p.actif === false ? 0 : 1, p.supprime ? 1 : 0, p.cree_le || maintenant, image,
+          p.contenu || null, Number(p.prix_promo) > 0 ? Number(p.prix_promo) : null, p.promo_fin || null, p.seuil_alerte == null ? 10 : Math.max(0, Math.round(Number(p.seuil_alerte) || 0)));
         packIds.add(id);
       }
 
@@ -76,8 +80,8 @@ router.post("/import", adminOnly, (req, res) => {
       );
       const venteIds = new Set();
       for (const v of d.ventes) {
-        if (!clientIds.has(v.client_id)) { const id = idOuNouveau(v.client_id); insClient.run(id, "Client supprimé", "", null, null, "Standard", null, 1, maintenant); clientIds.add(id); v.client_id = id; }
-        if (!packIds.has(v.pack_id)) { const id = idOuNouveau(v.pack_id); insPack.run(id, "Produit supprimé", "", Number(v.prix_unitaire) || 0, null, 0, null, "📦", 6, 0, 1, maintenant, null); packIds.add(id); v.pack_id = id; }
+        if (!clientIds.has(v.client_id)) { const id = idOuNouveau(v.client_id); insClient.run(id, "Client supprimé", "", null, null, "Standard", null, 1, maintenant, 0); clientIds.add(id); v.client_id = id; }
+        if (!packIds.has(v.pack_id)) { const id = idOuNouveau(v.pack_id); insPack.run(id, "Produit supprimé", "", Number(v.prix_unitaire) || 0, null, 0, null, "📦", 6, 0, 1, maintenant, null, null, null, null, 10); packIds.add(id); v.pack_id = id; }
         const id = idOuNouveau(v.id);
         const statutPaiement = ["en_attente", "a_verifier", "en_cours", "echoue"].includes(v.statut_paiement) ? v.statut_paiement : "payee";
         insVente.run(id, v.commande_id || null, v.client_id, v.pack_id, Math.max(1, Math.round(Number(v.quantite) || 1)), Number(v.prix_unitaire) || 0, v.mode_paiement || "Espèces",

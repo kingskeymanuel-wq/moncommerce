@@ -108,22 +108,41 @@ le lien ou le QR code imprimé. Jeton aléatoire de 24 caractères.
 - `POST /api/commandes/:id/commentaires` `{ texte }`
 - `PATCH /api/commandes/:id/paiement` `{ mode_paiement, montant_recu?, telephone_paiement?, reference_paiement? }` — encaisser (livraison) ou confirmer un transfert vérifié
 - `POST /api/commandes/:id/envoyer-recu` — lien du ticket par SMS au client
-- `DELETE /api/commandes/:id` — supprime la commande et ses lignes (stock réintégré)
+- `POST /api/commandes/:id/envoyer-email` `{ email? }` — ticket par e-mail (SMTP ; simulé si non configuré)
+- `DELETE /api/commandes/:id` (admin) — supprime la commande et ses lignes (stock réintégré)
 
 ### Ventes (caisse)
 - `GET /api/ventes?clientId=&dateDebut=&dateFin=` · `GET /api/ventes/:id`
 - `POST /api/ventes` `{ client_id, pack_id, quantite, mode_paiement, montant_recu?, telephone_paiement?, reference_paiement? }` — vente + stock + commande en une transaction. Moyens : Espèces (monnaie calculée), Orange Money, MTN MoMo, Moov Money, Wave (numéro du payeur obligatoire), Carte bancaire, Paiement à la livraison.
 - `DELETE /api/ventes/:id`
 
-### Produits
+### Produits (écriture : admin)
 - `GET /api/packs?tous=1` · `GET /api/packs/:id`
-- `POST /api/packs` · `PUT /api/packs/:id` — `image` : data URL JPEG/PNG/WebP (≤ 3 Mo, signature vérifiée) enregistrée dans `uploads/packs`, `null` pour la retirer
-- `PATCH /api/packs/:id/stock` `{ delta }`
+- `POST /api/packs` · `PUT /api/packs/:id` — `contenu` (équipements, un par ligne), `seuil_alerte`, `prix_promo` (< prix), `promo_fin` ; `image` : data URL JPEG/PNG/WebP (≤ 3 Mo, signature vérifiée) enregistrée dans `uploads/packs`, `null` pour la retirer
+- `PATCH /api/packs/:id/stock` `{ delta, motif?, note? }`
 - `DELETE /api/packs/:id` — suppression logique (historique conservé)
+
+### Stocks (admin) — chaque mouvement est journalisé (`mouvements_stock`)
+- `GET /api/stocks/mouvements?pack_id=&limite=`
+- `POST /api/stocks/reception` `{ pack_id, quantite, cout_unitaire?, fournisseur?, creer_depense? }`
+- `POST /api/stocks/sortie` `{ pack_id, quantite, motif: casse|ajustement, note? }`
+- `POST /api/stocks/inventaire` `{ lignes: [{ pack_id, stock_reel }] }`
+
+### Marketing (admin)
+- `GET /api/campagnes` — historique, statistiques, audiences, modèles, réglages hebdo, fournisseurs configurés
+- `POST /api/campagnes/apercu` `{ audience, canaux, type, message }` — nombre de destinataires + exemple
+- `POST /api/campagnes` `{ titre, type, message, canaux: [sms, email], audience: tous|vip|fideles|inactifs }`
+- `GET /api/campagnes/:id` — détail et envois
+- `PUT /api/campagnes/hebdo` `{ actif, jour (0=dimanche), heure, canaux, message }` · `POST /api/campagnes/hebdo/maintenant`
+- `POST /api/campagnes/promotion` `{ pack_ids, mode: pourcentage|prix, valeur, fin?, alerter, canaux, audience }` · `DELETE /api/campagnes/promotion/:packId`
+- Public : `GET|POST /api/boutique/stop/:jeton` — désinscription (`{ abonner: true }` pour se réabonner)
+
+Seuls les clients ayant donné leur accord (`consentement_marketing`) sont contactés.
 
 ### Clients, dépenses, réglages, données
 - `GET|POST /api/clients`, `GET|PUT|DELETE /api/clients/:id` (suppression logique)
-- `GET|POST /api/investissements`, `PUT|DELETE /api/investissements/:id`
+- `GET|POST /api/investissements`, `PUT|DELETE /api/investissements/:id` (admin)
+- `GET /api/donnees` renvoie `role` ; pour un vendeur, les coûts d'achat et les dépenses sont masqués
 - `GET /api/parametres` · `PUT /api/parametres` (admin) — nom, adresse, téléphone, message du ticket, slogan, WhatsApp, numéros Mobile Money marchands, frais et zone de livraison, boutique ouverte/fermée
 - `GET /api/donnees` — toutes les données en un appel (utilisé par l'administration)
 - `POST /api/donnees/import` (admin) — restauration / données d'exemple

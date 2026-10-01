@@ -40,6 +40,15 @@ ajouterColonne("commandes", "contact_email", "TEXT");
 db.exec("UPDATE ventes SET commande_id = (SELECT c.id FROM commandes c WHERE c.vente_id = ventes.id) WHERE commande_id IS NULL");
 db.exec("CREATE INDEX IF NOT EXISTS idx_ventes_commande ON ventes(commande_id)");
 
+// v5 : contenu des packs, promotions, seuils d'alerte, consentement marketing
+ajouterColonne("packs", "contenu", "TEXT");                 // équipements / articles inclus (un par ligne)
+ajouterColonne("packs", "prix_promo", "REAL");              // prix promotionnel
+ajouterColonne("packs", "promo_fin", "TEXT");               // fin de la promotion (ISO), vide = sans limite
+ajouterColonne("packs", "seuil_alerte", "INTEGER NOT NULL DEFAULT 10");
+ajouterColonne("clients", "consentement_marketing", "INTEGER NOT NULL DEFAULT 0");
+ajouterColonne("clients", "jeton_desinscription", "TEXT");
+ajouterColonne("clients", "desinscrit_le", "TEXT");
+
 // Anciens libellés de paiement → libellés actuels
 db.prepare("UPDATE ventes SET mode_paiement = 'Carte bancaire' WHERE mode_paiement = 'Carte'").run();
 

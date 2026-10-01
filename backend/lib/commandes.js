@@ -5,6 +5,7 @@
 const db = require("../db");
 const { versIso, ajouterEvenement } = require("./outils");
 const { lireBoutique } = require("../routes/parametres");
+const { mouvement } = require("./stock");
 
 function lignesCommande(cmd) {
   const lignes = db.prepare("SELECT * FROM ventes WHERE commande_id = ? ORDER BY date_vente, rowid").all(cmd.id);
@@ -16,10 +17,9 @@ function lignesCommande(cmd) {
 const sousTotal = (lignes) => lignes.reduce((s, l) => s + l.quantite * l.prix_unitaire, 0);
 const totalCommande = (cmd, lignes = lignesCommande(cmd)) => sousTotal(lignes) + (Number(cmd.frais_livraison) || 0);
 
-/** Remet (sens = +1) ou retire (sens = -1) du stock les articles d'une commande. */
-function mouvementStock(lignes, sens) {
-  const maj = db.prepare("UPDATE packs SET stock = MAX(0, stock + ?) WHERE id = ?");
-  for (const l of lignes) maj.run(sens * l.quantite, l.pack_id);
+/** Remet (sens = +1) ou retire (sens = -1) du stock les articles d'une commande (journalisé). */
+function mouvementStock(lignes, sens, motif, reference = null, auteurId = null) {
+  for (const l of lignes) mouvement(l.pack_id, sens * l.quantite, motif, { reference, auteurId });
 }
 
 /**
@@ -32,8 +32,8 @@ function changerStatut(commandeId, statut, auteurId, texte = null) {
   if (!cmd) return null;
   if (cmd.statut === statut) return cmd;
   const lignes = lignesCommande(cmd);
-  if (statut === "annulee") mouvementStock(lignes, +1);
-  else if (cmd.statut === "annulee") mouvementStock(lignes, -1);
+  if (statut === "annulee") mouvementStock(lignes, +1, "annulation", cmd.numero, auteurId);
+  else if (cmd.statut === "annulee") mouvementStock(lignes, -1, "retablissement", cmd.numero, auteurId);
   db.prepare("UPDATE commandes SET statut = ?, maj_le = ? WHERE id = ?").run(statut, new Date().toISOString(), commandeId);
   ajouterEvenement(commandeId, { statut, auteurId, texte });
   return db.prepare("SELECT * FROM commandes WHERE id = ?").get(commandeId);
@@ -48,9 +48,9 @@ function enregistrerPaiement(cmd, { mode, statut, montantRecu = null, reference 
 }
 
 /** Supprime une commande et ses lignes ; le stock est réintégré sauf si elle était annulée. */
-function supprimerCommande(cmd) {
+function supprimerCommande(cmd, auteurId = null) {
   const lignes = lignesCommande(cmd);
-  if (cmd.statut !== "annulee") mouvementStock(lignes, +1);
+  if (cmd.statut !== "annulee") mouvementStock(lignes, +1, "suppression", cmd.numero, auteurId);
   db.prepare("DELETE FROM commandes WHERE id = ?").run(cmd.id);
   const del = db.prepare("DELETE FROM ventes WHERE id = ?");
   for (const l of lignes) del.run(l.id);

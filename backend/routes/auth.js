@@ -9,6 +9,24 @@ const { normTel } = require("../lib/outils");
 const router = express.Router();
 
 const nbUtilisateurs = () => db.prepare("SELECT COUNT(*) AS n FROM utilisateurs").get().n;
+
+/**
+ * Comptes créés au démarrage à partir des variables d'environnement (facultatif) :
+ *   COMPTE_ADMIN_NOM / COMPTE_ADMIN_TELEPHONE / COMPTE_ADMIN_MOT_DE_PASSE
+ *   COMPTE_VENDEUR_NOM / COMPTE_VENDEUR_TELEPHONE / COMPTE_VENDEUR_MOT_DE_PASSE
+ * Utile sur un hébergement sans disque persistant : les comptes sont recréés à chaque redémarrage.
+ * Un compte déjà existant (même téléphone) n'est jamais modifié.
+ */
+for (const [prefixe, role, nomDefaut] of [["COMPTE_ADMIN", "admin", "Administrateur"], ["COMPTE_VENDEUR", "vendeur", "Vendeur"]]) {
+  const telephone = normTel(process.env[`${prefixe}_TELEPHONE`]);
+  const mdp = process.env[`${prefixe}_MOT_DE_PASSE`];
+  if (!telephone || !mdp) continue;
+  if (String(mdp).length < 6) { console.warn(`⚠️  ${prefixe}_MOT_DE_PASSE trop court (6 caractères minimum) : compte non créé`); continue; }
+  if (db.prepare("SELECT id FROM utilisateurs WHERE telephone = ?").get(telephone)) continue;
+  db.prepare("INSERT INTO utilisateurs (id, nom, telephone, mot_de_passe, role) VALUES (?, ?, ?, ?, ?)")
+    .run(nanoid(), process.env[`${prefixe}_NOM`] || nomDefaut, telephone, bcrypt.hashSync(String(mdp), 10), role);
+  console.log(`   Compte ${role} créé depuis les variables d'environnement (${telephone})`);
+}
 const profil = (u) => ({ id: u.id, nom: u.nom, telephone: u.telephone, email: u.email, role: u.role });
 
 // Code d'installation (CODE_INSTALLATION) : une fois le site en ligne, empêche un

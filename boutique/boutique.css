@@ -175,3 +175,16 @@ body.vitrine { background: var(--surface); scroll-behavior: smooth; }
   .v-footer-bas { flex-direction: column; gap: 8px; }
   .toasts { bottom: 86px; }
 }
+
+/* ---------- v5 : promotions, contenu des packs, consentement ---------- */
+.v-etiquette.promo { left: auto; right: 10px; background: var(--critical-solid); color: #fff; }
+.v-prix-barre { color: var(--text-3); font-weight: 400; font-size: .78em; margin-left: 8px; }
+.v-remise { display: inline-block; margin-left: 10px; background: var(--critical-solid); color: #fff; font-size: 13px; font-weight: 700; padding: 3px 9px; border-radius: 999px; vertical-align: middle; }
+.v-promos h2 { display: flex; align-items: center; gap: 8px; color: var(--critical-solid); }
+.v-contenu { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--surface-2); }
+.v-contenu-titre { font-weight: 650; margin-bottom: 8px; }
+.v-contenu ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.v-contenu li { display: flex; align-items: center; gap: 8px; }
+.v-contenu li svg { color: var(--success-dot); flex-shrink: 0; }
+.v-consentement { margin-top: 14px; align-items: flex-start; line-height: 1.45; }
+.v-consentement .checkbox-box { margin-top: 2px; }

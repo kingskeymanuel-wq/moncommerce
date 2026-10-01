@@ -56,8 +56,8 @@ export function lignesTicket(t) {
   if (t.boutique?.adresse) L.push({ k: "centre", txt: t.boutique.adresse });
   if (t.boutique?.telephone) L.push({ k: "centre", txt: "Tél : " + t.boutique.telephone });
   L.push({ k: "sep" });
-  L.push({ k: "centre", txt: t.canal === "en_ligne" ? "BON DE COMMANDE EN LIGNE" : "TICKET DE CAISSE", gras: true });
-  L.push({ k: "ligne", g: "N° " + t.numero, d: d.toLocaleDateString("fr-FR") + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) });
+  L.push({ k: "centre", txt: t.provisoire ? "RÉCAPITULATIF — TICKET PROVISOIRE" : t.canal === "en_ligne" ? "BON DE COMMANDE EN LIGNE" : "TICKET DE CAISSE", gras: true });
+  L.push({ k: "ligne", g: t.numero ? "N° " + t.numero : "N° à la validation", d: d.toLocaleDateString("fr-FR") + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) });
   if (t.vendeur) L.push({ k: "ligne", g: "Vendeur", d: t.vendeur });
   if (t.client) L.push({ k: "ligne", g: "Client", d: t.client });
   L.push({ k: "sep" });
@@ -80,8 +80,9 @@ export function lignesTicket(t) {
     L.push({ k: "ligne", g: "Monnaie rendue", d: n(p.monnaie || 0) });
   }
   if (p.reference) L.push({ k: "ligne", g: "Réf.", d: p.reference });
-  if (!payee && LIBELLES_STATUT_PAIEMENT[p.statut]) L.push({ k: "badge", txt: LIBELLES_STATUT_PAIEMENT[p.statut] });
-  if (payee && t.canal === "en_ligne") L.push({ k: "badge", txt: "PAYÉ" });
+  if (t.provisoire) L.push({ k: "badge", txt: "NON VALIDÉ — À CONFIRMER" });
+  else if (!payee && LIBELLES_STATUT_PAIEMENT[p.statut]) L.push({ k: "badge", txt: LIBELLES_STATUT_PAIEMENT[p.statut] });
+  if (!t.provisoire && payee && t.canal === "en_ligne") L.push({ k: "badge", txt: "PAYÉ" });
   if (t.statut === "annulee") L.push({ k: "badge", txt: "COMMANDE ANNULÉE" });
   L.push({ k: "sep" });
   return L;
@@ -104,8 +105,8 @@ export function cheminQr(qr) {
   return d;
 }
 
-/** Génère et télécharge le ticket au format PDF 80 mm (imprimante thermique). */
-export async function telechargerTicketPdf(t) {
+/** Construit le document PDF du ticket (format 80 mm, imprimante thermique). */
+async function construirePdf(t) {
   await chargerScript(JSPDF_URL);
   const qr = t.lien ? await genererQr(t.lien).catch(() => null) : null;
   const { jsPDF } = window.jspdf;
@@ -153,5 +154,20 @@ export async function telechargerTicketPdf(t) {
     y += 1;
   }
   centre(t.boutique?.message || "Merci pour votre achat !", 8.5, "bold");
-  doc.save(`ticket-${String(t.numero).replace(/[^\w-]/g, "")}.pdf`);
+  return doc;
 }
+
+const nomFichier = (t) => `ticket-${String(t.numero || "provisoire").replace(/[^\w-]/g, "")}.pdf`;
+
+/** Génère et télécharge le ticket au format PDF. */
+export async function telechargerTicketPdf(t) {
+  (await construirePdf(t)).save(nomFichier(t));
+}
+
+/** URL (blob:) du ticket PDF, pour l'afficher directement dans la page. */
+export async function urlTicketPdf(t) {
+  return (await construirePdf(t)).output("bloburl");
+}
+
+/** Le navigateur sait-il afficher un PDF dans la page ? (faux sur la plupart des mobiles) */
+export const pdfIntegrable = () => navigator.pdfViewerEnabled === true;

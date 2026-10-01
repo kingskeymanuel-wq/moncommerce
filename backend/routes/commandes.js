@@ -3,7 +3,10 @@ const db = require("../db");
 const { versIso, ajouterEvenement, urlPublique } = require("../lib/outils");
 const { validerPaiement } = require("../lib/paiements");
 const { envoyerSms } = require("../lib/sms");
-const { lignesCommande, totalCommande, changerStatut, enregistrerPaiement, supprimerCommande } = require("../lib/commandes");
+const { lignesCommande, totalCommande, changerStatut, enregistrerPaiement, supprimerCommande, ticketCommande } = require("../lib/commandes");
+const { envoyerEmail } = require("../lib/email");
+const { ticketEmail } = require("../lib/ticketEmail");
+const { adminOnly } = require("../middleware/auth");
 const router = express.Router();
 
 const STATUTS_VALIDES = ["en_attente", "confirmee", "expediee", "livree", "annulee"];
@@ -130,12 +133,33 @@ router.post("/:id/envoyer-recu", async (req, res) => {
   }
 });
 
-// DELETE /api/commandes/:id — supprime la commande et ses lignes ; le stock est
-// réintégré sauf si la commande était déjà annulée.
-router.delete("/:id", (req, res) => {
+// POST /api/commandes/:id/envoyer-email — { email? } : ticket de caisse par e-mail au client.
+// Une adresse saisie ici est aussi enregistrée sur la fiche client si elle était vide.
+router.post("/:id/envoyer-email", async (req, res) => {
   const cmd = lire(req.params.id);
   if (!cmd) return res.status(404).json({ erreur: "Commande introuvable" });
-  db.transaction(() => supprimerCommande(cmd))();
+  const vente = lignesCommande(cmd)[0];
+  const client = vente && db.prepare("SELECT * FROM clients WHERE id = ?").get(vente.client_id);
+  const email = String(req.body.email || cmd.contact_email || client?.email || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ erreur: "Indiquez une adresse e-mail valide" });
+  const { sujet, html, texte } = ticketEmail(ticketCommande(cmd), `${urlPublique(req)}/#/recu/${cmd.jeton_recu}`);
+  try {
+    const envoi = await envoyerEmail({ a: email, sujet, html, texte });
+    if (client && !client.email) db.prepare("UPDATE clients SET email = ? WHERE id = ?").run(email, client.id);
+    ajouterEvenement(cmd.id, { type: "note", texte: `Ticket envoyé par e-mail à ${email}${envoi?.simule ? " (simulé : aucun serveur e-mail configuré)" : ""}`, auteurId: req.user?.id });
+    res.json({ message: envoi?.simule ? "E-mail simulé (aucun serveur e-mail configuré)" : "E-mail envoyé", simule: !!envoi?.simule, email });
+  } catch (e) {
+    console.error("E-mail ticket :", e.message);
+    res.status(502).json({ erreur: "Envoi de l'e-mail impossible : vérifiez les réglages SMTP du serveur" });
+  }
+});
+
+// DELETE /api/commandes/:id — supprime la commande et ses lignes ; le stock est
+// réintégré sauf si la commande était déjà annulée.
+router.delete("/:id", adminOnly, (req, res) => {
+  const cmd = lire(req.params.id);
+  if (!cmd) return res.status(404).json({ erreur: "Commande introuvable" });
+  db.transaction(() => supprimerCommande(cmd, req.user?.id))();
   res.status(204).send();
 });
 

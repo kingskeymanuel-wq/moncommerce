@@ -23,6 +23,10 @@ const { normTel, prochainNumero, ajouterEvenement, versIso, urlPublique } = requ
 const { lireBoutique } = require("./parametres");
 const { lignesCommande, totalCommande, changerStatut, enregistrerPaiement, ticketCommande, nomCourt } = require("../lib/commandes");
 const cinetpay = require("../lib/cinetpay");
+const { envoyerEmail } = require("../lib/email");
+const { ticketEmail } = require("../lib/ticketEmail");
+const { mouvement } = require("../lib/stock");
+const { prixEffectif, promoActive, remisePourcent } = require("../lib/prix");
 const router = express.Router();
 
 const OPERATEURS = [
@@ -59,7 +63,10 @@ function produitsPublics() {
      WHERE COALESCE(c.statut, '') <> 'annulee' GROUP BY v.pack_id`
   ).all().map((r) => [r.pack_id, r.n]));
   return db.prepare("SELECT * FROM packs WHERE supprime = 0 AND actif = 1 ORDER BY cree_le DESC").all().map((p) => ({
-    id: p.id, nom: p.nom, description: p.description || "", prix: p.prix, image: p.image, emoji: p.emoji, teinte: p.teinte,
+    id: p.id, nom: p.nom, description: p.description || "", image: p.image, emoji: p.emoji, teinte: p.teinte,
+    // Prix appliqué (promotion comprise) et prix normal barré pendant une promotion
+    prix: prixEffectif(p), prix_normal: promoActive(p) ? p.prix : null, remise: remisePourcent(p), promo_fin: promoActive(p) ? p.promo_fin : null,
+    contenu: String(p.contenu || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean),
     stock: Math.max(0, p.stock), disponible: p.stock > 0, ventes: vendus.get(p.id) || 0, cree_le: versIso(p.cree_le),
   }));
 }
@@ -90,6 +97,7 @@ function validerClient(c = {}, exigerEmail) {
     adresse: String(c.adresse || "").trim().slice(0, 200),
     ville: String(c.ville || "").trim().slice(0, 80),
     instructions: String(c.instructions || "").trim().slice(0, 300),
+    consentement: c.consentement === true, // accord explicite pour recevoir promotions et nouveautés
   };
   if (client.nom.length < 2) return { erreur: "Indiquez votre nom complet." };
   if (normTel(client.telephone).replace(/\D/g, "").length < 8) return { erreur: "Indiquez un numéro de téléphone valide." };
@@ -105,11 +113,14 @@ function trouverOuCreerClient(c) {
   if (existant) {
     db.prepare("UPDATE clients SET email = COALESCE(NULLIF(email, ''), ?), ville = COALESCE(NULLIF(ville, ''), ?) WHERE id = ?")
       .run(c.email || null, c.ville || null, existant.id);
+    // Le dernier choix du client fait foi (il peut accepter ou refuser à chaque commande)
+    db.prepare("UPDATE clients SET consentement_marketing = ?, desinscrit_le = CASE WHEN ? = 0 AND consentement_marketing = 1 THEN ? ELSE desinscrit_le END WHERE id = ?")
+      .run(c.consentement ? 1 : 0, c.consentement ? 1 : 0, new Date().toISOString(), existant.id);
     return existant.id;
   }
   const id = nanoid();
-  db.prepare("INSERT INTO clients (id, nom, telephone, email, ville, statut, notes, cree_le) VALUES (?, ?, ?, ?, ?, 'Standard', ?, ?)")
-    .run(id, c.nom, c.telephone, c.email || null, c.ville || null, "Client inscrit via la boutique en ligne", new Date().toISOString());
+  db.prepare("INSERT INTO clients (id, nom, telephone, email, ville, statut, notes, consentement_marketing, cree_le) VALUES (?, ?, ?, ?, ?, 'Standard', ?, ?, ?)")
+    .run(id, c.nom, c.telephone, c.email || null, c.ville || null, "Client inscrit via la boutique en ligne", c.consentement ? 1 : 0, new Date().toISOString());
   return id;
 }
 
@@ -149,7 +160,7 @@ router.post("/commandes", limiteCommandes, async (req, res) => {
   if (v.erreur) return res.status(400).json({ erreur: v.erreur });
   const client = v.client;
 
-  const sousTotal = lignes.reduce((s, l) => s + l.quantite * l.pack.prix, 0);
+  const sousTotal = lignes.reduce((s, l) => s + l.quantite * prixEffectif(l.pack), 0);
   const frais = fraisPour(sousTotal, cfg);
   const total = sousTotal + frais;
 
@@ -184,13 +195,12 @@ router.post("/commandes", limiteCommandes, async (req, res) => {
         `INSERT INTO ventes (id, commande_id, client_id, pack_id, quantite, prix_unitaire, mode_paiement, statut_paiement,
            reference_paiement, telephone_paiement, date_vente) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
-      const decStock = db.prepare("UPDATE packs SET stock = stock - ? WHERE id = ? AND stock >= ?");
       for (const l of lignes) {
         // Décrément conditionnel : protège contre deux commandes simultanées sur le dernier article
-        if (decStock.run(l.quantite, l.pack.id, l.quantite).changes !== 1) throw Object.assign(new Error("stock"), { stock: l.pack });
+        if (!mouvement(l.pack.id, -l.quantite, "vente_en_ligne", { reference: numero, conditionnel: true })) throw Object.assign(new Error("stock"), { stock: l.pack });
         const id = nanoid();
         venteIds.push(id);
-        insVente.run(id, commandeId, clientId, l.pack.id, l.quantite, l.pack.prix, champsPaiement.mode, champsPaiement.statut,
+        insVente.run(id, commandeId, clientId, l.pack.id, l.quantite, prixEffectif(l.pack), champsPaiement.mode, champsPaiement.statut,
           champsPaiement.reference || null, champsPaiement.telephone || null, maintenant);
       }
       db.prepare(
@@ -242,6 +252,13 @@ router.post("/commandes", limiteCommandes, async (req, res) => {
       console.error("CinetPay :", e.message);
       return res.status(502).json({ erreur: `Le paiement en ligne est indisponible pour le moment (${e.message}). Choisissez un autre mode de paiement.` });
     }
+  }
+
+  // Ticket par e-mail au client (si adresse fournie) — sans bloquer la réponse
+  if (client.email) {
+    const cmd = db.prepare("SELECT * FROM commandes WHERE id = ?").get(commandeId);
+    const { sujet, html, texte } = ticketEmail(ticketCommande(cmd), `${urlPublique(req)}/#/commande/${jeton}`);
+    envoyerEmail({ a: client.email, sujet, html, texte }).catch((e) => console.error("E-mail de commande :", e.message));
   }
 
   res.status(201).json(reponse);
@@ -324,6 +341,23 @@ router.get("/commandes/:jeton", async (req, res) => {
     contact: { telephone: cfg.boutique.telephone, whatsapp: cfg.boutique.whatsapp },
     client: nomCourt(t.client),
   });
+});
+
+/* ---------------------------------------------------------------- désinscription */
+
+// Lien « STOP » des SMS et e-mails marketing : le client se désinscrit sans compte
+const clientParJeton = (j) => (/^[A-Za-z0-9_-]{8,40}$/.test(String(j)) ? db.prepare("SELECT * FROM clients WHERE jeton_desinscription = ?").get(String(j)) : null);
+router.get("/stop/:jeton", (req, res) => {
+  const c = clientParJeton(req.params.jeton);
+  if (!c) return res.status(404).json({ erreur: "Lien de désinscription invalide" });
+  res.json({ prenom: String(c.nom || "").split(" ")[0], boutique: lireBoutique().nom, abonne: !!c.consentement_marketing });
+});
+router.post("/stop/:jeton", (req, res) => {
+  const c = clientParJeton(req.params.jeton);
+  if (!c) return res.status(404).json({ erreur: "Lien de désinscription invalide" });
+  const abonner = req.body?.abonner === true;
+  db.prepare("UPDATE clients SET consentement_marketing = ?, desinscrit_le = ? WHERE id = ?").run(abonner ? 1 : 0, abonner ? null : new Date().toISOString(), c.id);
+  res.json({ abonne: abonner });
 });
 
 /* ---------------------------------------------------------------- abandons */

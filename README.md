@@ -100,6 +100,39 @@ L'intégration suit l'API CinetPay v1 du SDK officiel
 - **Paramètres** : informations imprimées sur les tickets, boutique en ligne,
   équipe (comptes vendeurs), sauvegarde / restauration.
 
+### Deux rôles : administrateur et vendeur
+
+| | Administrateur | Vendeur |
+|---|---|---|
+| Caisse, commandes, clients, tickets | ✔ | ✔ |
+| Produits : prix, contenu détaillé des packs, promotions | ✔ | lecture seule |
+| **Stocks** : réceptions (avec dépense), sorties, inventaire, journal | ✔ | — |
+| **Marketing** : campagnes, message hebdomadaire, promotions | ✔ | — |
+| **Finances** : dépenses, coûts d'achat, bénéfices | ✔ | — |
+| Supprimer une commande ou un client | ✔ | — |
+
+Les restrictions sont appliquées par le serveur (403), pas seulement masquées
+dans l'interface. Le premier compte créé est administrateur ; il crée ensuite
+les vendeurs dans *Paramètres → Équipe*.
+
+### Tickets de caisse
+1. Avant validation, la vente (caisse ou boutique en ligne) est présentée sous
+   forme de **ticket provisoire** (« récapitulatif — non validé »).
+2. Après validation, le **ticket définitif s'affiche en PDF** (téléchargeable,
+   imprimable). Le vendeur peut aussi l'imprimer en 80 mm, l'envoyer par
+   **WhatsApp**, **e-mail** ou **SMS** au client.
+
+### Marketing et fidélisation
+- Le client accepte (case à cocher) de recevoir les offres lors de son achat ;
+  chaque message contient un lien **STOP** de désinscription (`/#/stop/…`).
+- **Message automatique** chaque semaine (jour et heure réglables, lundi 8 h
+  par défaut) : bonne semaine + nouveautés + promotions en cours.
+- **Lancer une promotion** : remise en % ou prix fixe sur les produits choisis,
+  date de fin, et alerte automatique des clients abonnés (SMS / e-mail).
+- **Plan de fidélisation** : VIP, clients fidèles, inactifs, nouveaux clients.
+- Sans fournisseur SMS (`SMS_PROVIDER_*`) ni serveur e-mail (`SMTP_*`), les
+  envois sont **simulés** (journalisés, marqués « Simulé » dans l'historique).
+
 Si l'administration est ouverte sans serveur, elle propose un **mode démo**
 dont les données restent dans le navigateur.
 
@@ -120,6 +153,11 @@ base (`DB_PATH`) et les photos (`UPLOADS_DIR`), secrets `JWT_SECRET` et
    administrateur avec ce code (sans lui, personne ne peut créer le premier compte).
 5. Facultatif : nom de domaine personnalisé (service → **Settings → Custom
    Domains**, puis renseignez `PUBLIC_URL`), clés CinetPay dans **Environment**.
+
+**Démo gratuite (instance « Free »)** : pas de disque, donc les données sont
+effacées à chaque redémarrage ou mise en veille, et le message hebdomadaire ne
+part pas pendant la veille. Renseignez `COMPTE_ADMIN_*` et `COMPTE_VENDEUR_*`
+dans **Environment** pour que les deux comptes soient recréés automatiquement.
 
 Chaque `git push` sur `main` redéploie automatiquement. Les données sont sur le
 disque et ne sont pas touchées par les redéploiements. Pensez à télécharger

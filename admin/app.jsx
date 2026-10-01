@@ -10,8 +10,9 @@ import {
   MapPin, Trash2, Pencil, Eye, EyeOff, Lock, ShieldCheck, LogOut, Moon, Sun, Monitor, Download, Upload,
   Printer, Copy, RotateCcw, ShoppingBag, LayoutGrid, List, AlertCircle, AlertTriangle, Info, Sparkles,
   CreditCard, Smartphone, Banknote, TrendingUp, Inbox, UserPlus, User, MessageSquare, Store, Wallet,
+  Boxes, Megaphone, Percent, Send, History, ClipboardList, PackagePlus, PackageMinus, CalendarClock, FileText, Gift,
 } from "lucide-react";
-import { lignesTicket, telechargerTicketPdf, telInternational, genererQr, cheminQr, lienTicket } from "../partage/ticket.js";
+import { lignesTicket, telechargerTicketPdf, urlTicketPdf, pdfIntegrable, telInternational, genererQr, cheminQr, lienTicket } from "../partage/ticket.js";
 
 /* =====================================================================
    MonCommerce — administration de boutique (style Shopify)
@@ -361,8 +362,10 @@ function depuisServeur(p) {
   });
   const venteDate = new Map(p.ventes.map((v) => [v.id, v.date_vente]));
   return {
-    clients: p.clients.map((c) => ({ id: c.id, nom: c.nom, tel: c.telephone || "", email: c.email || "", ville: c.ville || "", statut: c.statut || "Standard", notes: c.notes || "", dateAjout: isoDate(new Date(c.cree_le)) })),
-    packs: p.packs.map((x) => ({ id: x.id, nom: x.nom, desc: x.description || "", prix: x.prix, cout: x.cout ?? null, stock: x.stock, sku: x.sku || "", emoji: x.emoji || "📦", teinte: x.teinte ?? 0, actif: !!x.actif, image: x.image || null })),
+    role: p.role || "admin",
+    clients: p.clients.map((c) => ({ id: c.id, nom: c.nom, tel: c.telephone || "", email: c.email || "", ville: c.ville || "", statut: c.statut || "Standard", notes: c.notes || "", dateAjout: isoDate(new Date(c.cree_le)), consentement: !!c.consentement_marketing })),
+    packs: p.packs.map((x) => ({ id: x.id, nom: x.nom, desc: x.description || "", prix: x.prix, cout: x.cout ?? null, stock: x.stock, sku: x.sku || "", emoji: x.emoji || "📦", teinte: x.teinte ?? 0, actif: !!x.actif, image: x.image || null,
+      contenu: x.contenu || "", prixPromo: x.prix_promo ?? null, promoFin: x.promo_fin || null, seuilAlerte: x.seuil_alerte ?? STOCK_FAIBLE })),
     ventes,
     commandes: p.commandes.map((c) => {
       const h = (evts.get(c.id) || []).map((e) => (e.type === "statut" ? { statut: e.statut, date: e.cree_le } : { type: e.type, texte: e.texte, date: e.cree_le }));
@@ -377,8 +380,14 @@ function depuisServeur(p) {
   };
 }
 
-const clientVersServeur = (c) => ({ nom: c.nom, telephone: c.tel, email: c.email || "", ville: c.ville || "", statut: c.statut, notes: c.notes || "" });
-const packVersServeur = (p) => ({ nom: p.nom, description: p.desc || "", prix: p.prix, cout: p.cout ?? null, stock: p.stock, sku: p.sku || "", emoji: p.emoji, teinte: p.teinte, actif: p.actif !== false, image: p.image ?? null });
+const clientVersServeur = (c) => ({ nom: c.nom, telephone: c.tel, email: c.email || "", ville: c.ville || "", statut: c.statut, notes: c.notes || "", consentement_marketing: c.consentement ? 1 : 0 });
+const packVersServeur = (p) => ({ nom: p.nom, description: p.desc || "", prix: p.prix, cout: p.cout ?? null, stock: p.stock, sku: p.sku || "", emoji: p.emoji, teinte: p.teinte, actif: p.actif !== false, image: p.image ?? null,
+  contenu: p.contenu || "", prix_promo: p.prixPromo ?? null, promo_fin: p.promoFin || null, seuil_alerte: p.seuilAlerte ?? STOCK_FAIBLE });
+
+/* Promotion en cours ? (même règle que le serveur : lib/prix.js) */
+const promoActive = (p) => p?.prixPromo != null && p.prixPromo > 0 && p.prixPromo < p.prix && (!p.promoFin || new Date(p.promoFin) > new Date());
+const prixEffectif = (p) => (promoActive(p) ? p.prixPromo : p?.prix || 0);
+const seuilDe = (p) => p?.seuilAlerte ?? STOCK_FAIBLE;
 const investVersServeur = (i) => ({ libelle: i.libelle, categorie: i.categorie, montant: i.montant, date_invest: i.date });
 
 function versServeur(d) {
@@ -479,7 +488,7 @@ function computeTodo(d) {
     enLigne: d.commandes.filter((c) => c.canal === "en_ligne" && c.statut === "en_attente").length,
     aExpedier: count("confirmee"),
     enLivraison: count("expediee"),
-    faible: d.packs.filter((p) => p.actif !== false && p.stock > 0 && p.stock < STOCK_FAIBLE),
+    faible: d.packs.filter((p) => p.actif !== false && p.stock > 0 && p.stock <= seuilDe(p)),
     rupture: d.packs.filter((p) => p.actif !== false && p.stock <= 0),
   };
 }
@@ -696,7 +705,7 @@ const PaiementBadge = ({ c }) => {
   return <Badge tone="neutral" dot>Payée</Badge>;
 };
 const CanalBadge = ({ c }) => (c?.canal === "en_ligne" ? <Badge tone="magic" icon={ShoppingBag}>En ligne</Badge> : null);
-const StockBadge = ({ stock }) => (stock <= 0 ? <Badge tone="critical">Rupture</Badge> : stock < STOCK_FAIBLE ? <Badge tone="warning">{stock} en stock</Badge> : <Badge tone="success">{stock} en stock</Badge>);
+const StockBadge = ({ stock, seuil = STOCK_FAIBLE }) => (stock <= 0 ? <Badge tone="critical">Rupture</Badge> : stock <= seuil ? <Badge tone="warning">{stock} en stock</Badge> : <Badge tone="success">{stock} en stock</Badge>);
 
 const Delta = ({ value }) => (value == null
   ? <span className="delta neutral">—</span>
@@ -1157,10 +1166,14 @@ const NAV = [
   { key: "accueil", label: "Accueil", icon: Home },
   { key: "commandes", label: "Commandes", icon: ShoppingCart, badge: (d) => d.commandes.filter((c) => c.statut === "en_attente").length },
   { key: "produits", label: "Produits", icon: Tag },
+  { key: "stocks", label: "Stocks", icon: Boxes, admin: true, badge: (d) => d.packs.filter((p) => p.actif !== false && p.stock <= seuilDe(p)).length },
   { key: "clients", label: "Clients", icon: Users },
   { key: "ventes", label: "Ventes", icon: Receipt },
-  { key: "finances", label: "Finances", icon: Landmark },
+  { key: "marketing", label: "Marketing", icon: Megaphone, admin: true },
+  { key: "finances", label: "Finances", icon: Landmark, admin: true },
 ];
+/* Pages visibles selon le rôle (le vendeur n'a ni stocks, ni marketing, ni finances) */
+const navPour = (estAdmin) => NAV.filter((n) => estAdmin || !n.admin);
 
 function useNotifications(data) {
   return useMemo(() => {
@@ -1178,7 +1191,7 @@ function useNotifications(data) {
 }
 
 function Topbar({ onMenu }) {
-  const { data, settings, openCmdk, go, logout, cycleTheme, effectiveTheme, auth } = useApp();
+  const { data, settings, openCmdk, go, logout, cycleTheme, effectiveTheme, auth, estAdmin } = useApp();
   const notifs = useNotifications(data);
   const [nOpen, setNOpen] = useState(false);
   const [uOpen, setUOpen] = useState(false);
@@ -1213,7 +1226,7 @@ function Topbar({ onMenu }) {
           trigger={<button className="user-btn" onClick={() => setUOpen((o) => !o)}><span className={cx("avatar avatar-sm", `tint-${toneOf((data.boutique?.nom || "Ma Boutique"))}`)}>{initials((data.boutique?.nom || "Ma Boutique"))}</span><span className="hide-sm">{(data.boutique?.nom || "Ma Boutique")}</span></button>}>
           <div style={{ padding: "8px 10px 10px" }}>
             <div className="strong">{(data.boutique?.nom || "Ma Boutique")}</div>
-            <div className="subtle">{auth?.tel || "Compte administrateur"}</div>
+            <div className="subtle">{auth?.utilisateur?.nom ? `${auth.utilisateur.nom} · ` : ""}{estAdmin ? "Administrateur" : "Vendeur"}</div>
           </div>
           <div className="pop-sep" />
           <MenuItem icon={Settings} onClick={() => { closeU(); go("parametres"); }}>Paramètres</MenuItem>
@@ -1228,15 +1241,15 @@ function Topbar({ onMenu }) {
 }
 
 function SidebarNav({ onNavigate }) {
-  const { route, data, openSale, settings } = useApp();
+  const { route, data, openSale, estAdmin } = useApp();
   return (
     <nav className="nav">
       <div className="nav-store">
         <span className={cx("avatar avatar-sm", `tint-${toneOf((data.boutique?.nom || "Ma Boutique"))}`)}>{initials((data.boutique?.nom || "Ma Boutique"))}</span>
-        <div className="grow"><strong className="truncate">{(data.boutique?.nom || "Ma Boutique")}</strong><span>Côte d'Ivoire · FCFA</span></div>
+        <div className="grow"><strong className="truncate">{(data.boutique?.nom || "Ma Boutique")}</strong><span>{estAdmin ? "Administrateur" : "Espace vendeur"} · FCFA</span></div>
       </div>
       <Btn variant="primary" full icon={Plus} className="nav-cta" onClick={() => { onNavigate?.(); openSale(); }}>Nouvelle vente</Btn>
-      {NAV.map((n) => {
+      {navPour(estAdmin).map((n) => {
         const badge = n.badge?.(data);
         return (
           <a key={n.key} href={"#/" + n.key} className={cx("nav-item", route.page === n.key && "active")} onClick={onNavigate}>
@@ -1246,7 +1259,7 @@ function SidebarNav({ onNavigate }) {
       })}
       <div className="nav-spacer" />
       <a href="#/parametres" className={cx("nav-item", route.page === "parametres" && "active")} onClick={onNavigate}><Settings size={18} /><span>Paramètres</span></a>
-      <div className="nav-foot">MonCommerce · v2.0</div>
+      <div className="nav-foot">MonCommerce · v5.0</div>
     </nav>
   );
 }
@@ -1272,7 +1285,7 @@ function BottomNav({ onMenu }) {
 
 /* ---------- Palette de commandes (Ctrl/⌘ + K) ---------- */
 function CommandPalette({ open, onClose }) {
-  const { data, go, openSale, cycleTheme } = useApp();
+  const { data, go, openSale, cycleTheme, estAdmin } = useApp();
   const [q, setQ] = useState("");
   const [idx, setIdx] = useState(0);
   const listRef = useRef(null);
@@ -1283,12 +1296,14 @@ function CommandPalette({ open, onClose }) {
     const match = (s) => !n || norm(s).includes(n);
     const actions = [
       { id: "a-sale", label: "Nouvelle vente", icon: Plus, run: () => openSale() },
-      { id: "a-prod", label: "Ajouter un produit", icon: Tag, run: () => go("produits", "nouveau") },
+      estAdmin && { id: "a-prod", label: "Ajouter un produit", icon: Tag, run: () => go("produits", "nouveau") },
+      estAdmin && { id: "a-rec", label: "Réceptionner du stock", icon: PackagePlus, run: () => go("stocks", "reception") },
+      estAdmin && { id: "a-promo", label: "Lancer une promotion", icon: Percent, run: () => go("marketing", "promotion") },
       { id: "a-cli", label: "Ajouter un client", icon: UserPlus, run: () => go("clients", "nouveau") },
-      { id: "a-inv", label: "Enregistrer une dépense", icon: Wallet, run: () => go("finances", "nouveau") },
+      estAdmin && { id: "a-inv", label: "Enregistrer une dépense", icon: Wallet, run: () => go("finances", "nouveau") },
       { id: "a-theme", label: "Changer de thème", icon: Moon, run: () => cycleTheme() },
-    ].filter((a) => match(a.label));
-    const pages = [...NAV, { key: "parametres", label: "Paramètres", icon: Settings }]
+    ].filter((a) => a && match(a.label));
+    const pages = [...navPour(estAdmin), { key: "parametres", label: "Paramètres", icon: Settings }]
       .filter((p) => match(p.label)).map((p) => ({ id: "p-" + p.key, label: p.label, icon: p.icon, hint: "Aller à", run: () => go(p.key) }));
     const g = [];
     if (n) {
@@ -1513,10 +1528,66 @@ function TicketCaisse({ t }) {
   );
 }
 
+/* Ticket validé affiché directement en PDF (si le navigateur sait l'afficher), sinon en HTML */
+function TicketPdfApercu({ t }) {
+  const integrable = pdfIntegrable();
+  const [url, setUrl] = useState(null);
+  const [echec, setEchec] = useState(false);
+  const cle = JSON.stringify(t);
+  useEffect(() => {
+    if (!integrable) return;
+    let actif = true, u = null;
+    setUrl(null);
+    urlTicketPdf(t).then((x) => { u = x; if (actif) setUrl(x); else URL.revokeObjectURL(x); }).catch(() => actif && setEchec(true));
+    return () => { actif = false; if (u) URL.revokeObjectURL(u); };
+  }, [cle]);
+  if (!integrable || echec) return <TicketCaisse t={t} />;
+  if (!url) return <div className="pdf-attente"><span className="spinner" />Génération du ticket PDF…</div>;
+  return <iframe className="ticket-pdf" src={url + "#toolbar=1&view=FitH"} title={`Ticket ${t.numero || ""} (PDF)`} />;
+}
+
+/* Envoi du ticket par e-mail au client */
+function EmailTicketModal({ open, onClose, t, cmd }) {
+  const { mode, sync, toast } = useApp();
+  const [email, setEmail] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (open) { setEmail(cmd?.contactEmail || cmd?.client?.email || ""); setErr(""); setBusy(false); } }, [open]);
+  const envoyer = async () => {
+    const e = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) { setErr("Adresse e-mail invalide."); return; }
+    if (mode !== "api") {
+      // Démo locale : le logiciel de messagerie de l'appareil prend le relais
+      const corps = lignesTicket(t).map((l) => l.k === "ligne" ? `${l.g} : ${l.d}` : l.k === "sep" ? "----------------" : l.txt || "").join("\n");
+      window.location.href = `mailto:${e}?subject=${encodeURIComponent(`Votre ticket ${t.numero} — ${t.boutique?.nom}`)}&body=${encodeURIComponent(corps)}`;
+      onClose();
+      return;
+    }
+    setBusy(true);
+    const r = await sync(["POST", `/api/commandes/${cmd.id}/envoyer-email`, { email: e }]);
+    setBusy(false);
+    if (!r) return;
+    toast({ title: r[0]?.simule ? "E-mail simulé" : "Ticket envoyé par e-mail", desc: r[0]?.simule ? "Aucun serveur e-mail (SMTP) configuré sur l'hébergement." : `À ${e}` });
+    onClose();
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Envoyer le ticket par e-mail" size="sm"
+      footer={<><Btn onClick={onClose}>Annuler</Btn><Btn variant="primary" icon={Send} loading={busy} onClick={envoyer}>Envoyer</Btn></>}>
+      <div className="stack-sm">
+        <p className="subtle">Le client reçoit son ticket {t.numero} ({fmt(t.total)}) avec le lien de téléchargement du PDF.</p>
+        <Field label="Adresse e-mail du client" error={err} help={cmd?.client && !cmd.client.email ? "Elle sera aussi enregistrée sur la fiche du client." : null}>
+          <Input icon={Mail} type="email" value={email} onChange={(ev) => { setEmail(ev.target.value); setErr(""); }} placeholder="client@exemple.ci" data-autofocus onKeyDown={(ev) => ev.key === "Enter" && envoyer()} />
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+
 function ActionsTicket({ t, cmd, compact }) {
   const { toast, mode, sync } = useApp();
   const [pdf, setPdf] = useState(false);
   const [sms, setSms] = useState(false);
+  const [mail, setMail] = useState(false);
   const telephoner = cmd?.client?.tel;
   const texte = `${t.boutique?.nom} : merci pour votre achat (${t.numero}, ${fmt(t.total)}).${t.lien ? " Votre ticket de caisse : " + t.lien : ""}`;
   const telecharger = async () => {
@@ -1538,8 +1609,10 @@ function ActionsTicket({ t, cmd, compact }) {
       <Btn icon={Printer} onClick={() => window.print()}>Imprimer</Btn>
       <Btn icon={Download} loading={pdf} onClick={telecharger}>PDF</Btn>
       {telephoner && <Btn icon={MessageSquare} onClick={() => window.open(`https://wa.me/${telInternational(telephoner)}?text=${encodeURIComponent(texte)}`, "_blank", "noopener")}>WhatsApp</Btn>}
+      {cmd && <Btn icon={Mail} onClick={() => setMail(true)}>E-mail</Btn>}
       {mode === "api" && telephoner && <Btn icon={Smartphone} loading={sms} onClick={envoyerSms}>SMS</Btn>}
       {t.lien && <Btn icon={Copy} onClick={() => navigator.clipboard?.writeText(t.lien).then(() => toast({ title: "Lien du ticket copié" }), () => toast({ title: "Copie impossible", tone: "critical" }))}>Lien</Btn>}
+      {cmd && <EmailTicketModal open={mail} onClose={() => setMail(false)} t={t} cmd={cmd} />}
     </div>
   );
 }
@@ -1557,42 +1630,62 @@ function SaleModal({ open, preset, onClose }) {
   const [err, setErr] = useState({});
   const [done, setDone] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [apercu, setApercu] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setPackId(preset?.packId || ""); setClientId(preset?.clientId || ""); setQte(1); setPay(paiementVide());
-    setQp(""); setQc(""); setNouveau(null); setErr({}); setDone(null); setSaving(false);
+    setQp(""); setQc(""); setNouveau(null); setErr({}); setDone(null); setSaving(false); setApercu(false);
   }, [open]);
 
   const pack = data.packs.find((p) => p.id === packId);
   const client = data.clients.find((c) => c.id === clientId);
-  const total = pack ? pack.prix * qte : 0;
+  const prixU = prixEffectif(pack);
+  const total = pack ? prixU * qte : 0;
   const packs = data.packs.filter((p) => p.actif !== false && norm(p.nom + " " + p.sku).includes(norm(qp)));
   const clients = data.clients.filter((c) => norm(c.nom + " " + c.tel + " " + c.ville).includes(norm(qc)));
   const clientOk = !!client || (nouveau && nouveau.nom.trim() && nouveau.tel.trim());
 
   useEffect(() => { if (pack && qte > pack.stock) setQte(Math.max(1, pack.stock)); }, [packId]);
 
-  const submit = () => {
+  /* Étape 1 : vérification, puis récapitulatif sous forme de ticket provisoire */
+  const verifier = () => {
     const e = {};
     if (!pack) e.pack = "Choisissez un produit.";
     if (!clientOk) e.client = nouveau ? "Nom et téléphone requis." : "Choisissez un client.";
+    if (nouveau?.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nouveau.email.trim())) e.client = "Adresse e-mail invalide.";
     if (pack && qte > pack.stock) e.pack = `Stock insuffisant (${pack.stock} disponible${pack.stock > 1 ? "s" : ""}).`;
     const ep = validerPaiementLocal(pay, total);
     if (ep) e.pay = ep;
     setErr(e);
     if (Object.keys(e).length) return;
+    setApercu(true);
+  };
+
+  const ticketProvisoire = () => {
+    const l = paiementLocal(pay, total);
+    return {
+      provisoire: true, boutique: data.boutique || boutiqueParDefaut(), numero: null, date: new Date().toISOString(), statut: "en_attente",
+      vendeur: auth?.utilisateur?.nom ? nomCourt(auth.utilisateur.nom) : null, client: nomCourt(client?.nom || nouveau?.nom), canal: "boutique",
+      lignes: [{ nom: pack.nom, quantite: qte, prix_unitaire: prixU, total }], sous_total: total, frais_livraison: 0, total,
+      paiement: { mode: l.paiement, statut: l.statutPaiement, montant_recu: l.montantRecu, monnaie: l.montantRecu != null ? Math.max(0, l.montantRecu - total) : null, reference: l.reference || null },
+      lien: null,
+    };
+  };
+
+  /* Étape 2 : validation définitive (stock, numéro, ticket) */
+  const submit = () => {
     setSaving(true);
     setTimeout(async () => {
       const now = new Date();
       const venteId = uid(), cmdId = uid();
       let numero = nextNumero(data);
-      const newClient = !client ? { id: uid(), nom: nouveau.nom.trim(), tel: nouveau.tel.trim(), email: "", ville: nouveau.ville?.trim() || "", statut: "Standard", notes: "", dateAjout: isoDate(now) } : null;
+      const newClient = !client ? { id: uid(), nom: nouveau.nom.trim(), tel: nouveau.tel.trim(), email: nouveau.email?.trim().toLowerCase() || "", ville: nouveau.ville?.trim() || "", statut: "Standard", notes: "", dateAjout: isoDate(now), consentement: !!nouveau.consentement } : null;
       const cl = client || newClient;
       update((d) => ({
         ...d,
         clients: newClient ? [...d.clients, newClient] : d.clients,
-        ventes: [...d.ventes, { id: venteId, commandeId: cmdId, clientId: cl.id, packId: pack.id, qte, prixUnitaire: pack.prix, date: isoDate(now), heure: hhmm(now), vendeur: auth?.utilisateur?.nom || "", ...paiementLocal(pay, total) }],
+        ventes: [...d.ventes, { id: venteId, commandeId: cmdId, clientId: cl.id, packId: pack.id, qte, prixUnitaire: prixU, date: isoDate(now), heure: hhmm(now), vendeur: auth?.utilisateur?.nom || "", ...paiementLocal(pay, total) }],
         packs: d.packs.map((p) => (p.id === pack.id ? { ...p, stock: Math.max(0, p.stock - qte) } : p)),
         commandes: [...d.commandes, { id: cmdId, venteId, numero, statut: "en_attente", adresseLivraison: cl.ville || "", note: "", canal: "boutique", fraisLivraison: 0, historique: [{ statut: "en_attente", date: now.toISOString() }] }],
       }));
@@ -1602,7 +1695,8 @@ function SaleModal({ open, preset, onClose }) {
         ["POST", "/api/ventes", { id: venteId, commande_id: cmdId, client_id: cl.id, pack_id: pack.id, quantite: qte, adresse_livraison: cl.ville || "", ...paiementVersServeur(pay, total) }],
       );
       setSaving(false);
-      if (!res) return; // erreur déjà signalée, données rechargées depuis le serveur
+      if (!res) { setApercu(false); return; } // erreur déjà signalée, données rechargées depuis le serveur
+      setApercu(false);
       numero = res[res.length - 1]?.commande?.numero || numero;
       setDone({ cmdId, numero, total, client: cl.nom });
       toast({ title: "Vente enregistrée", desc: `${numero} · ${fmt(total)}`, action: { label: "Voir", onClick: () => go("commandes", cmdId) } });
@@ -1623,16 +1717,36 @@ function SaleModal({ open, preset, onClose }) {
           {monnaie > 0 && <div className="banner banner-success" style={{ animation: "fadeUp .4s .5s var(--ease-out) both" }}><Banknote size={16} /><div>Monnaie à rendre : <b className="num">{fmt(monnaie)}</b></div></div>}
           {ticket && (
             <div className="success-ticket">
-              <div className="label" style={{ marginBottom: 8 }}>Ticket de caisse</div>
+              <div className="label" style={{ marginBottom: 8 }}>Ticket de caisse validé (PDF)</div>
+              <TicketPdfApercu t={ticket} />
               <ActionsTicket t={ticket} cmd={cmdFinale} />
-              <details className="ticket-apercu"><summary>Aperçu du ticket</summary><TicketCaisse t={ticket} /></details>
             </div>
           )}
           <div className="row">
             <Btn onClick={onClose}>Fermer</Btn>
-            <Btn onClick={() => { setDone(null); setPackId(""); setClientId(""); setQte(1); setNouveau(null); setPay(paiementVide()); }} icon={Plus}>Autre vente</Btn>
+            <Btn onClick={() => { setDone(null); setApercu(false); setPackId(""); setClientId(""); setQte(1); setNouveau(null); setPay(paiementVide()); }} icon={Plus}>Autre vente</Btn>
             <Btn variant="primary" onClick={() => { onClose(); go("commandes", done.cmdId); }}>Voir la commande</Btn>
           </div>
+        </div>
+      </Modal>
+    );
+  }
+
+  if (apercu && pack) {
+    const livraison = infoPaiement(pay.mode).type === "livraison";
+    return (
+      <Modal open={open} onClose={onClose} title="Récapitulatif de la vente" size="md" hideHeader>
+        <div className="modal-head">
+          <h2>Récapitulatif avant validation</h2>
+          <button className="icon-btn" onClick={onClose} aria-label="Fermer"><X size={18} /></button>
+        </div>
+        <div className="modal-body stack">
+          <div className="banner banner-info"><FileText size={16} /><div>Vérifiez le ticket avec le client. Rien n'est encore enregistré : le stock et le numéro de ticket seront attribués à la validation.</div></div>
+          <TicketCaisse t={ticketProvisoire()} />
+        </div>
+        <div className="modal-foot">
+          <Btn icon={ArrowLeft} onClick={() => setApercu(false)} disabled={saving}>Modifier</Btn>
+          <Btn variant="brand" icon={CheckCircle2} loading={saving} onClick={submit}>{livraison ? "Valider la commande" : `Valider et encaisser ${fmt(total)}`}</Btn>
         </div>
       </Modal>
     );
@@ -1656,8 +1770,9 @@ function SaleModal({ open, preset, onClose }) {
                   {packId === p.id && <span className="pick-check"><Check size={12} strokeWidth={3} /></span>}
                   <Thumb pack={p} />
                   <span className="pt-name">{p.nom}</span>
-                  <span className="row" style={{ justifyContent: "space-between", width: "100%" }}>
-                    <span className="pt-price">{fmt(p.prix)}</span>
+                  <span className="row" style={{ justifyContent: "space-between", width: "100%", flexWrap: "wrap", gap: 4 }}>
+                    <span className="pt-price">{fmt(prixEffectif(p))}</span>
+                    {promoActive(p) && <span className="prix-barre">{fmt(p.prix)}</span>}
                   </span>
                   <span className="subtle">{p.stock <= 0 ? "Rupture de stock" : `${p.stock} en stock`}</span>
                 </button>
@@ -1691,7 +1806,9 @@ function SaleModal({ open, preset, onClose }) {
                 <div className="form-grid">
                   <Field label="Nom complet" error={err.client && !nouveau.nom.trim() ? "Nom requis" : null}><Input value={nouveau.nom} onChange={(e) => setNouveau({ ...nouveau, nom: e.target.value })} placeholder="Ex : Awa Bamba" autoFocus /></Field>
                   <Field label="Téléphone" error={err.client && !nouveau.tel.trim() ? "Téléphone requis" : null}><Input value={nouveau.tel} onChange={(e) => setNouveau({ ...nouveau, tel: e.target.value })} placeholder="07 00 00 00 00" inputMode="tel" /></Field>
-                  <Field label="Ville / quartier" optional className="full"><Input value={nouveau.ville} onChange={(e) => setNouveau({ ...nouveau, ville: e.target.value })} placeholder="Ex : Cocody, Abidjan" /></Field>
+                  <Field label="Ville / quartier" optional><Input value={nouveau.ville} onChange={(e) => setNouveau({ ...nouveau, ville: e.target.value })} placeholder="Ex : Cocody, Abidjan" /></Field>
+                  <Field label="E-mail" optional><Input icon={Mail} type="email" value={nouveau.email || ""} onChange={(e) => setNouveau({ ...nouveau, email: e.target.value })} placeholder="client@exemple.ci" /></Field>
+                  <div className="full"><Checkbox checked={nouveau.consentement} onChange={(v) => setNouveau({ ...nouveau, consentement: v })} label="Le client accepte de recevoir nos promotions et nouveautés (SMS / e-mail)" /></div>
                 </div>
                 <div style={{ marginTop: 10 }}><Btn variant="plain" icon={ArrowLeft} onClick={() => setNouveau(null)}>Choisir un client existant</Btn></div>
               </div>
@@ -1704,7 +1821,7 @@ function SaleModal({ open, preset, onClose }) {
           {pack ? (
             <div className="row" style={{ gap: 12, animation: "fadeUp .3s var(--ease-out)" }} key={pack.id}>
               <Thumb pack={pack} />
-              <div className="grow"><div className="strong truncate">{pack.nom}</div><div className="subtle num">{fmt(pack.prix)}</div></div>
+              <div className="grow"><div className="strong truncate">{pack.nom}</div><div className="subtle num">{fmt(prixU)}{promoActive(pack) && <> <span className="prix-barre">{fmt(pack.prix)}</span> <Badge tone="success">Promo</Badge></>}</div></div>
               <Stepper value={qte} onChange={setQte} max={Math.max(1, pack.stock)} />
             </div>
           ) : <div className="subtle" style={{ padding: "8px 0" }}>Aucun produit sélectionné</div>}
@@ -1719,7 +1836,7 @@ function SaleModal({ open, preset, onClose }) {
             <div className="summary-line"><span>Sous-total</span><span className="num">{fmt(total)}</span></div>
             <div className="summary-line"><span>Livraison</span><span>Gratuite</span></div>
             <div className="summary-total"><span className="strong">Total</span><strong><CountUp value={total} format={fmt} /></strong></div>
-            <Btn variant="brand" size="lg" full loading={saving} onClick={submit} icon={CheckCircle2}>{infoPaiement(pay.mode).type === "livraison" ? "Valider la commande" : `Encaisser ${total ? fmt(total) : ""}`}</Btn>
+            <Btn variant="brand" size="lg" full onClick={verifier} icon={FileText}>Voir le récapitulatif (ticket)</Btn>
           </div>
         </aside>
       </div>
@@ -1794,7 +1911,7 @@ function ImagePicker({ value, onChange }) {
 /* ---------- Produit ---------- */
 function ProductModal({ open, pack, onClose }) {
   const { data, update, sync, toast, confirm } = useApp();
-  const blank = { nom: "", desc: "", prix: "", cout: "", stock: "", sku: "", emoji: "📦", teinte: 0, actif: true, image: null };
+  const blank = { nom: "", desc: "", prix: "", cout: "", stock: "", sku: "", emoji: "📦", teinte: 0, actif: true, image: null, contenu: "", seuilAlerte: String(STOCK_FAIBLE), prixPromo: "", promoFin: "" };
   const [f, setF] = useState(blank);
   const [err, setErr] = useState({});
   const [shake, setShake] = useState(false);
@@ -1802,22 +1919,30 @@ function ProductModal({ open, pack, onClose }) {
     if (!open) return;
     setErr({});
     setF(pack
-      ? { ...blank, ...pack, prix: String(pack.prix ?? ""), cout: pack.cout != null ? String(pack.cout) : "", stock: String(pack.stock ?? 0) }
+      ? { ...blank, ...pack, prix: String(pack.prix ?? ""), cout: pack.cout != null ? String(pack.cout) : "", stock: String(pack.stock ?? 0),
+        contenu: pack.contenu || "", seuilAlerte: String(seuilDe(pack)), prixPromo: pack.prixPromo != null ? String(pack.prixPromo) : "", promoFin: pack.promoFin ? isoDate(new Date(pack.promoFin)) : "" }
       : { ...blank, sku: "PK-" + (101 + data.packs.length), teinte: data.packs.length % 8 });
   }, [open, pack?.id]);
   const set = (k, v) => { setF((s) => ({ ...s, [k]: v })); if (err[k]) setErr((e) => ({ ...e, [k]: null })); };
   const prix = Number(f.prix) || 0, cout = Number(f.cout) || 0;
   const marge = prix && cout ? prix - cout : null;
+  const prixPromo = f.prixPromo === "" ? null : Number(f.prixPromo);
   const vendus = pack ? data.ventes.filter((v) => v.packId === pack.id).reduce((s, v) => s + v.qte, 0) : 0;
+  const elements = String(f.contenu || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
 
   const save = () => {
     const e = {};
     if (!f.nom.trim()) e.nom = "Le titre est obligatoire.";
     if (!(prix > 0)) e.prix = "Indiquez un prix supérieur à 0.";
     if (f.stock !== "" && (Number(f.stock) < 0 || !Number.isInteger(Number(f.stock)))) e.stock = "Quantité entière positive.";
+    if (prixPromo != null && !(prixPromo > 0 && prixPromo < prix)) e.prixPromo = "Le prix promotionnel doit être inférieur au prix de vente.";
+    if (f.promoFin && prixPromo == null) e.prixPromo = "Indiquez le prix promotionnel.";
+    if (f.promoFin && parseDate(f.promoFin) < today()) e.promoFin = "Date déjà passée.";
     setErr(e);
     if (Object.keys(e).length) { setShake(true); setTimeout(() => setShake(false), 450); return; }
-    const clean = { ...f, nom: f.nom.trim(), prix, cout: f.cout === "" ? null : cout, stock: Number(f.stock) || 0 };
+    const fin = f.promoFin ? (() => { const d = parseDate(f.promoFin); d.setHours(23, 59, 59, 0); return d.toISOString(); })() : null;
+    const clean = { ...f, nom: f.nom.trim(), prix, cout: f.cout === "" ? null : cout, stock: Number(f.stock) || 0,
+      contenu: elements.join("\n"), seuilAlerte: Math.max(0, Number(f.seuilAlerte) || 0), prixPromo, promoFin: prixPromo != null ? fin : null };
     if (pack) {
       update((d) => ({ ...d, packs: d.packs.map((p) => (p.id === pack.id ? { ...p, ...clean } : p)) }));
       sync(["PUT", `/api/packs/${pack.id}`, packVersServeur(clean)]);
@@ -1851,7 +1976,10 @@ function ProductModal({ open, pack, onClose }) {
       </>}>
       <div className="stack">
         <Field label="Titre" error={err.nom}><Input value={f.nom} onChange={(e) => set("nom", e.target.value)} placeholder="Ex : Pack Élégance" /></Field>
-        <Field label="Description" optional><textarea className="textarea" value={f.desc} onChange={(e) => set("desc", e.target.value)} placeholder="Ce que contient le pack, ses avantages…" /></Field>
+        <Field label="Description" optional><textarea className="textarea" value={f.desc} onChange={(e) => set("desc", e.target.value)} placeholder="Ses avantages, à qui il s'adresse…" /></Field>
+        <Field label="Contenu détaillé (équipements)" optional help={elements.length ? `${elements.length} élément${elements.length > 1 ? "s" : ""} — affichés sur la fiche produit de la boutique en ligne.` : "Un élément par ligne. Ex : Sac en cuir, Portefeuille, Ceinture…"}>
+          <textarea className="textarea" rows={4} value={f.contenu} onChange={(e) => set("contenu", e.target.value)} placeholder={"Sac en cuir\nPortefeuille assorti\nCeinture réglable"} />
+        </Field>
         <Field label="Image du produit" optional help="JPEG, PNG ou WebP. L'image est automatiquement redimensionnée.">
           <ImagePicker value={f.image} onChange={(v) => set("image", v)} />
         </Field>
@@ -1869,10 +1997,22 @@ function ProductModal({ open, pack, onClose }) {
           </div>
         </div>
         <div className="card" style={{ boxShadow: "none", border: "1px solid var(--border)" }}>
+          <div className="card-section"><div className="card-title">Promotion</div><div className="subtle">Prix réduit appliqué en caisse et sur la boutique en ligne. Pour alerter les clients, utilisez Marketing → Lancer une promotion.</div></div>
+          <div className="card-section form-grid">
+            <Field label="Prix promotionnel" optional error={err.prixPromo} help={prixPromo > 0 && prix > prixPromo ? `Remise de ${Math.round((1 - prixPromo / prix) * 100)} %` : null}>
+              <Input value={f.prixPromo} onChange={(e) => set("prixPromo", e.target.value.replace(/[^\d]/g, ""))} suffix="FCFA" inputMode="numeric" placeholder="Aucune promotion" />
+            </Field>
+            <Field label="Fin de la promotion" optional error={err.promoFin} help="Sans date : jusqu'à ce que vous la retiriez.">
+              <Input type="date" value={f.promoFin} onChange={(e) => set("promoFin", e.target.value)} min={isoDate(new Date())} />
+            </Field>
+          </div>
+        </div>
+        <div className="card" style={{ boxShadow: "none", border: "1px solid var(--border)" }}>
           <div className="card-section"><div className="card-title">Inventaire</div></div>
           <div className="card-section form-grid">
             <Field label="SKU (référence)"><Input value={f.sku} onChange={(e) => set("sku", e.target.value)} /></Field>
-            <Field label="Quantité en stock" error={err.stock}>
+            <Field label="Seuil d'alerte" help="Alerte « stock faible » à partir de cette quantité."><Input value={f.seuilAlerte} onChange={(e) => set("seuilAlerte", e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" suffix="unités" /></Field>
+            <Field label={pack ? "Quantité en stock (correction)" : "Stock initial"} error={err.stock} className="full" help={pack ? "Pour une livraison fournisseur, préférez Stocks → Réception (historique et coût d'achat)." : null}>
               <div className="row">
                 <div className="grow"><Input value={f.stock} onChange={(e) => set("stock", e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" placeholder="0" /></div>
                 <Stepper value={Number(f.stock) || 0} min={0} max={99999} onChange={(v) => set("stock", String(v))} />
@@ -1892,7 +2032,7 @@ function ProductModal({ open, pack, onClose }) {
 /* ---------- Client ---------- */
 function ClientModal({ open, client, onClose, onSaved }) {
   const { update, sync, toast } = useApp();
-  const blank = { nom: "", tel: "", email: "", ville: "", statut: "Standard", notes: "" };
+  const blank = { nom: "", tel: "", email: "", ville: "", statut: "Standard", notes: "", consentement: false };
   const [f, setF] = useState(blank);
   const [err, setErr] = useState({});
   const [shake, setShake] = useState(false);
@@ -1931,6 +2071,10 @@ function ClientModal({ open, client, onClose, onSaved }) {
           <Segmented full value={f.statut} onChange={(v) => set("statut", v)} options={[{ value: "Standard", label: "Standard", icon: User }, { value: "VIP", label: "VIP", icon: Star }]} />
         </Field>
         <Field label="Notes" optional className="full"><textarea className="textarea" value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Préférences, remarques…" /></Field>
+        <div className="full row-between card" style={{ padding: 14, boxShadow: "none", border: "1px solid var(--border)" }}>
+          <div><div className="strong">Accepte les messages marketing</div><div className="subtle">Promotions, nouveautés et message du lundi par SMS / e-mail. Ne cochez qu'avec l'accord du client.</div></div>
+          <Switch on={!!f.consentement} onChange={(v) => set("consentement", v)} label="Consentement marketing" />
+        </div>
       </div>
     </Modal>
   );
@@ -2321,7 +2465,7 @@ function PageCommandes({ route }) {
    PAGE : Commande (détail)
    ===================================================================== */
 function PageCommande({ id }) {
-  const { data, update, sync, go, toast, confirm } = useApp();
+  const { data, update, sync, go, toast, confirm, estAdmin } = useApp();
   const [receipt, setReceipt] = useState(false);
   const [encaisser, setEncaisser] = useState(false);
   const [comment, setComment] = useState("");
@@ -2374,8 +2518,7 @@ function PageCommande({ id }) {
           <MoreMenu items={[
             c.statut === "annulee" && { label: "Rétablir la commande", icon: RotateCcw, onClick: () => setStatut("en_attente") },
             c.statut !== "annulee" && { label: "Annuler la commande", icon: XCircle, onClick: cancel },
-            "sep",
-            { label: "Supprimer", icon: Trash2, tone: "critical", onClick: remove },
+            ...(estAdmin ? ["sep", { label: "Supprimer", icon: Trash2, tone: "critical", onClick: remove }] : []),
           ]} />
         </>}
       />
@@ -2522,8 +2665,37 @@ function PageCommande({ id }) {
 /* =====================================================================
    PAGE : Produits
    ===================================================================== */
+/* Fiche produit en lecture seule (vendeur) */
+function FicheProduitModal({ open, pack, onClose, onVendre }) {
+  const elements = String(pack?.contenu || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+  return (
+    <Modal open={open} onClose={onClose} title={pack?.nom || "Produit"} size="md"
+      footer={pack && <><Btn onClick={onClose}>Fermer</Btn><Btn variant="primary" icon={ShoppingCart} disabled={pack.stock <= 0 || pack.actif === false} onClick={() => onVendre(pack)}>Vendre ce produit</Btn></>}>
+      {pack && (
+        <div className="stack">
+          <div className="row" style={{ gap: 14 }}>
+            <Thumb pack={pack} size="xl" />
+            <div className="grow stack-sm">
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}><span className="strong num" style={{ fontSize: 22 }}>{fmt(prixEffectif(pack))}</span>{promoActive(pack) && <><span className="prix-barre">{fmt(pack.prix)}</span><Badge tone="success">Promo</Badge></>}</div>
+              {promoActive(pack) && pack.promoFin && <div className="subtle">Promotion jusqu'au {fmtDate(isoDate(new Date(pack.promoFin)))}</div>}
+              <div><StockBadge stock={pack.stock} seuil={seuilDe(pack)} /> <span className="subtle">{pack.sku}</span></div>
+            </div>
+          </div>
+          {pack.desc && <p className="muted">{pack.desc}</p>}
+          {elements.length > 0 && (
+            <div>
+              <div className="label" style={{ marginBottom: 6 }}>Contenu du pack</div>
+              <ul className="liste-contenu">{elements.map((x, i) => <li key={i}><Check size={14} />{x}</li>)}</ul>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function PageProduits({ route }) {
-  const { data, update, sync, go, toast } = useApp();
+  const { data, update, sync, go, toast, estAdmin, openSale } = useApp();
   const [tab, setTab] = useState(route.query.filtre || "tous");
   const [q, setQ] = useState("");
   const [view, setView] = useState(() => readJson("moncommerce-vue-produits") || "grille");
@@ -2545,12 +2717,13 @@ function PageProduits({ route }) {
     tous: () => true,
     actifs: (p) => p.actif !== false,
     brouillons: (p) => p.actif === false,
-    faible: (p) => p.stock > 0 && p.stock < STOCK_FAIBLE,
+    faible: (p) => p.stock > 0 && p.stock <= seuilDe(p),
+    promo: (p) => promoActive(p),
     rupture: (p) => p.stock <= 0,
   };
   const tabs = [
     { key: "tous", label: "Tous" }, { key: "actifs", label: "Actifs" }, { key: "brouillons", label: "Brouillons" },
-    { key: "faible", label: "Stock faible" }, { key: "rupture", label: "Rupture" },
+    { key: "faible", label: "Stock faible" }, { key: "rupture", label: "Rupture" }, { key: "promo", label: "En promotion" },
   ].map((t) => ({ ...t, count: data.packs.filter(filters[t.key]).length }));
 
   const rows = sort.apply(
@@ -2571,7 +2744,8 @@ function PageProduits({ route }) {
   return (
     <>
       <PageHeader title="Produits" meta={`${data.packs.length} produits · valeur du stock ${fmt(valeurStock)}`}
-        actions={<><Btn icon={Download} onClick={exporter} className="hide-sm">Exporter</Btn><Btn variant="primary" icon={Plus} onClick={() => go("produits", "nouveau")}>Ajouter un produit</Btn></>} />
+        actions={estAdmin && <><Btn icon={Download} onClick={exporter} className="hide-sm">Exporter</Btn><Btn variant="primary" icon={Plus} onClick={() => go("produits", "nouveau")}>Ajouter un produit</Btn></>} />
+      {!estAdmin && <div className="banner banner-info" style={{ marginBottom: 16 }}><Info size={16} /><div>Catalogue en consultation : les prix, le contenu des packs et les stocks sont gérés par l'administrateur.</div></div>}
 
       <div className="card">
         <div className="table-toolbar">
@@ -2592,7 +2766,7 @@ function PageProduits({ route }) {
 
         {rows.length === 0 ? (
           <EmptyState icon={Tag} title={q || tab !== "tous" ? "Aucun produit trouvé" : "Ajoutez votre premier produit"}
-            action={!q && tab === "tous" && <Btn variant="primary" icon={Plus} onClick={() => go("produits", "nouveau")}>Ajouter un produit</Btn>}>
+            action={!q && tab === "tous" && estAdmin && <Btn variant="primary" icon={Plus} onClick={() => go("produits", "nouveau")}>Ajouter un produit</Btn>}>
             {q || tab !== "tous" ? "Essayez un autre filtre ou une autre recherche." : "Créez vos packs pour commencer à vendre."}
           </EmptyState>
         ) : view === "grille" ? (
@@ -2600,15 +2774,16 @@ function PageProduits({ route }) {
             {rows.map((p, i) => (
               <div key={p.id} className="product-card" style={{ "--i": i }} role="button" tabIndex={0} onClick={() => go("produits", p.id)} onKeyDown={(e) => e.key === "Enter" && go("produits", p.id)}>
                 <div className="pc-media"><Thumb pack={p} size="xl" /></div>
-                <div className="pc-badge">{p.actif === false ? <Badge tone="neutral">Brouillon</Badge> : <StockBadge stock={p.stock} />}</div>
-                <div className="pc-actions" onClick={(e) => e.stopPropagation()}>
+                <div className="pc-badge">{p.actif === false ? <Badge tone="neutral">Brouillon</Badge> : <StockBadge stock={p.stock} seuil={seuilDe(p)} />}</div>
+                {promoActive(p) && <div className="pc-promo">−{Math.round((1 - p.prixPromo / p.prix) * 100)} %</div>}
+                {estAdmin && <div className="pc-actions" onClick={(e) => e.stopPropagation()}>
                   <button className="icon-btn" aria-label="Retirer 1 du stock" onClick={() => adjust(p, -1)}><Minus size={14} /></button>
                   <button className="icon-btn" aria-label="Ajouter 1 au stock" onClick={() => adjust(p, 1)}><Plus size={14} /></button>
-                </div>
+                </div>}
                 <div className="pc-body">
                   <div className="pc-name truncate">{p.nom}</div>
                   <div className="pc-desc">{p.desc || <span className="subtle">Pas de description</span>}</div>
-                  <div className="row-between"><span className="pc-price">{fmt(p.prix)}</span><span className="subtle">{vendus.get(p.id) || 0} vendus</span></div>
+                  <div className="row-between"><span className="pc-price">{fmt(prixEffectif(p))}{promoActive(p) && <span className="prix-barre">{fmt(p.prix)}</span>}</span><span className="subtle">{vendus.get(p.id) || 0} vendus</span></div>
                 </div>
               </div>
             ))}
@@ -2631,10 +2806,10 @@ function PageProduits({ route }) {
                     <td className="wrap"><div className="cell-product"><Thumb pack={p} size="sm" /><div><div className="cell-main">{p.nom}</div><div className="cell-sub">{p.sku}</div></div></div></td>
                     <td className="hide-sm">{p.actif === false ? <Badge>Brouillon</Badge> : <Badge tone="success">Actif</Badge>}</td>
                     <td onClick={(e) => e.stopPropagation()}>
-                      <div className="row"><StockBadge stock={p.stock} /><span className="hide-sm row" style={{ gap: 2 }}><button className="icon-btn" onClick={() => adjust(p, -1)} aria-label="Retirer 1"><Minus size={13} /></button><button className="icon-btn" onClick={() => adjust(p, 1)} aria-label="Ajouter 1"><Plus size={13} /></button></span></div>
+                      <div className="row"><StockBadge stock={p.stock} seuil={seuilDe(p)} />{estAdmin && <span className="hide-sm row" style={{ gap: 2 }}><button className="icon-btn" onClick={() => adjust(p, -1)} aria-label="Retirer 1"><Minus size={13} /></button><button className="icon-btn" onClick={() => adjust(p, 1)} aria-label="Ajouter 1"><Plus size={13} /></button></span>}</div>
                     </td>
                     <td className="hide-sm right num">{vendus.get(p.id) || 0}</td>
-                    <td className="right num strong">{fmt(p.prix)}</td>
+                    <td className="right num strong">{fmt(prixEffectif(p))}{promoActive(p) && <div className="prix-barre">{fmt(p.prix)}</div>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -2643,7 +2818,9 @@ function PageProduits({ route }) {
         )}
       </div>
 
-      <ProductModal open={modalOpen} pack={editing} onClose={() => go("produits")} />
+      {estAdmin
+        ? <ProductModal open={modalOpen} pack={editing} onClose={() => go("produits")} />
+        : <FicheProduitModal open={!!editing} pack={editing} onClose={() => go("produits")} onVendre={(p) => { go("produits"); openSale({ packId: p.id }); }} />}
     </>
   );
 }
@@ -2671,7 +2848,7 @@ function PageClients({ route }) {
   const st = (id) => stats.get(id) || { nb: 0, total: 0, last: "" };
 
   const rows = sort.apply(
-    data.clients.filter((c) => (tab === "tous" || c.statut === tab) && norm(c.nom + " " + c.tel + " " + c.ville + " " + c.email).includes(norm(q))),
+    data.clients.filter((c) => (tab === "tous" || (tab === "abonnes" ? c.consentement : c.statut === tab)) && norm(c.nom + " " + c.tel + " " + c.ville + " " + c.email).includes(norm(q))),
     { nom: (c) => c.nom, total: (c) => st(c.id).total, nb: (c) => st(c.id).nb, date: (c) => c.dateAjout || "" },
   );
   const pg = usePaged(rows, 15, tab + q + sort.sort.key + sort.sort.dir);
@@ -2704,6 +2881,7 @@ function PageClients({ route }) {
             { key: "tous", label: "Tous", count: data.clients.length },
             { key: "VIP", label: "VIP", count: data.clients.filter((c) => c.statut === "VIP").length },
             { key: "Standard", label: "Standard", count: data.clients.filter((c) => c.statut !== "VIP").length },
+            { key: "abonnes", label: "Abonnés marketing", count: data.clients.filter((c) => c.consentement).length },
           ]} />
         </div>
         <div className="table-filters"><SearchInput value={q} onChange={setQ} placeholder="Rechercher par nom, téléphone, ville…" /></div>
@@ -2731,7 +2909,7 @@ function PageClients({ route }) {
                     <td className="hide-md muted">{c.ville || "—"}</td>
                     <td className="hide-sm right num">{st(c.id).nb}</td>
                     <td className="right num strong">{fmt(st(c.id).total)}</td>
-                    <td className="hide-sm">{c.statut === "VIP" ? <Badge tone="warning" icon={Star}>VIP</Badge> : <Badge>Standard</Badge>}</td>
+                    <td className="hide-sm"><span className="row" style={{ gap: 4 }}>{c.statut === "VIP" ? <Badge tone="warning" icon={Star}>VIP</Badge> : <Badge>Standard</Badge>}{c.consentement && <Badge tone="info" icon={Megaphone}>Abonné</Badge>}</span></td>
                     <td className="hide-md muted">{c.dateAjout ? fmtDate(c.dateAjout) : "—"}</td>
                   </tr>
                 ))}
@@ -2750,7 +2928,7 @@ function PageClients({ route }) {
    PAGE : Client (détail)
    ===================================================================== */
 function PageClient({ id }) {
-  const { data, update, sync, go, toast, confirm, openSale } = useApp();
+  const { data, update, sync, go, toast, confirm, openSale, estAdmin } = useApp();
   const [edit, setEdit] = useState(false);
   const [notes, setNotes] = useState(null);
   const client = data.clients.find((c) => c.id === id);
@@ -2783,8 +2961,7 @@ function PageClient({ id }) {
           <Btn icon={Pencil} onClick={() => setEdit(true)}>Modifier</Btn>
           <MoreMenu items={[
             { label: client.statut === "VIP" ? "Retirer le statut VIP" : "Passer en VIP", icon: Star, onClick: toggleVip },
-            "sep",
-            { label: "Supprimer le client", icon: Trash2, tone: "critical", onClick: remove },
+            ...(estAdmin ? ["sep", { label: "Supprimer le client", icon: Trash2, tone: "critical", onClick: remove }] : []),
           ]} />
           <Btn variant="primary" icon={Plus} onClick={() => openSale({ clientId: client.id })}>Nouvelle vente</Btn>
         </>} />
@@ -2829,6 +3006,7 @@ function PageClient({ id }) {
               <div className="row muted"><Phone size={14} /><a href={`tel:${client.tel.replace(/\s/g, "")}`}>{client.tel}</a></div>
               {client.email ? <div className="row muted"><Mail size={14} /><a href={`mailto:${client.email}`} className="truncate">{client.email}</a></div> : <div className="row subtle"><Mail size={14} />Pas d'e-mail</div>}
               <div className="row muted"><MapPin size={14} />{client.ville || <span className="subtle">Pas d'adresse</span>}</div>
+              <div className="row muted"><Megaphone size={14} />{client.consentement ? "Abonné aux promotions et nouveautés" : <span className="subtle">Non abonné aux messages marketing</span>}</div>
             </div>
           </Card>
           <Card title="Notes" actions={notes == null && <button className="icon-btn" onClick={() => setNotes(client.notes || "")} aria-label="Modifier les notes"><Pencil size={15} /></button>}>
@@ -2943,6 +3121,653 @@ function PageVentes() {
         )}
         <Pager pg={pg} />
       </div>
+    </>
+  );
+}
+
+/* Page réservée à l'administrateur */
+const AccesReserve = () => {
+  const { go } = useApp();
+  return <Card><EmptyState icon={Lock} title="Accès réservé à l'administrateur" action={<Btn variant="primary" onClick={() => go("accueil")}>Retour à l'accueil</Btn>}>Votre compte vendeur ne donne pas accès à cette page.</EmptyState></Card>;
+};
+
+/* =====================================================================
+   PAGE : Stocks (administrateur) — réceptions, sorties, inventaire, journal
+   ===================================================================== */
+const MOTIFS_STOCK = {
+  vente: { label: "Vente en caisse", tone: "info" }, vente_en_ligne: { label: "Vente en ligne", tone: "magic" },
+  annulation: { label: "Annulation", tone: "neutral" }, retablissement: { label: "Rétablissement", tone: "neutral" },
+  suppression: { label: "Suppression de vente", tone: "neutral" }, reception: { label: "Réception", tone: "success" },
+  inventaire: { label: "Inventaire", tone: "warning" }, casse: { label: "Casse / perte", tone: "critical" },
+  retour: { label: "Retour", tone: "success" }, ajustement: { label: "Ajustement", tone: "warning" }, stock_initial: { label: "Stock initial", tone: "neutral" },
+};
+
+function ReceptionModal({ open, packId, onClose }) {
+  const { data, update, sync, toast } = useApp();
+  const [f, setF] = useState({});
+  const [err, setErr] = useState({});
+  const packs = data.packs.filter((p) => p.actif !== false || p.id === packId);
+  useEffect(() => {
+    if (!open) return;
+    const p = data.packs.find((x) => x.id === packId) || packs[0];
+    setF({ packId: p?.id || "", quantite: "", cout: p?.cout != null ? String(p.cout) : "", fournisseur: "", depense: true });
+    setErr({});
+  }, [open, packId]);
+  const pack = data.packs.find((p) => p.id === f.packId);
+  const q = Number(f.quantite) || 0, cout = f.cout === "" ? null : Number(f.cout);
+  const set = (k, v) => { setF((s) => ({ ...s, [k]: v, ...(k === "packId" ? { cout: data.packs.find((p) => p.id === v)?.cout != null ? String(data.packs.find((p) => p.id === v).cout) : "" } : {}) })); setErr({}); };
+  const valider = () => {
+    const e = {};
+    if (!pack) e.packId = "Choisissez un produit.";
+    if (!(q > 0)) e.quantite = "Indiquez la quantité reçue.";
+    setErr(e);
+    if (Object.keys(e).length) return;
+    const fournisseur = f.fournisseur.trim();
+    const depense = f.depense && cout > 0 ? { id: uid(), libelle: `Achat de stock — ${pack.nom} ×${q}${fournisseur ? " (" + fournisseur + ")" : ""}`, categorie: "Stock", montant: q * cout, date: isoDate(new Date()) } : null;
+    update((d) => ({
+      ...d,
+      packs: d.packs.map((p) => (p.id === pack.id ? { ...p, stock: p.stock + q, cout: cout ?? p.cout } : p)),
+      investissements: depense ? [depense, ...d.investissements] : d.investissements,
+    }));
+    sync(["POST", "/api/stocks/reception", { pack_id: pack.id, quantite: q, cout_unitaire: cout, fournisseur, creer_depense: !!depense }]);
+    toast({ title: `+${q} ${pack.nom}`, desc: depense ? `Dépense de ${fmt(depense.montant)} enregistrée (Stock)` : "Réception enregistrée" });
+    onClose();
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Réception de marchandise" size="md"
+      footer={<><Btn onClick={onClose}>Annuler</Btn><Btn variant="primary" icon={PackagePlus} onClick={valider}>Enregistrer la réception</Btn></>}>
+      <div className="form-grid">
+        <Field label="Produit" error={err.packId} className="full">
+          <Select value={f.packId || ""} onChange={(e) => set("packId", e.target.value)}>{packs.map((p) => <option key={p.id} value={p.id}>{p.nom} — {p.stock} en stock</option>)}</Select>
+        </Field>
+        <Field label="Quantité reçue" error={err.quantite}><Input value={f.quantite || ""} onChange={(e) => set("quantite", e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" suffix="unités" placeholder="0" data-autofocus /></Field>
+        <Field label="Coût d'achat unitaire" optional help="Met à jour le coût du produit (calcul des marges)."><Input value={f.cout || ""} onChange={(e) => set("cout", e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" suffix="FCFA" placeholder="0" /></Field>
+        <Field label="Fournisseur" optional className="full"><Input value={f.fournisseur || ""} onChange={(e) => set("fournisseur", e.target.value)} placeholder="Ex : Grossiste Adjamé" /></Field>
+        <div className="full"><Checkbox checked={f.depense} onChange={(v) => set("depense", v)} label={`Enregistrer l'achat dans les dépenses${q && cout ? ` (${fmt(q * cout)})` : ""}`} /></div>
+        {pack && q > 0 && <div className="full banner banner-success"><PackagePlus size={16} /><div>Stock de <b>{pack.nom}</b> : {pack.stock} → <b>{pack.stock + q}</b></div></div>}
+      </div>
+    </Modal>
+  );
+}
+
+function SortieModal({ open, packId, onClose }) {
+  const { data, update, sync, toast } = useApp();
+  const [f, setF] = useState({});
+  const [err, setErr] = useState("");
+  useEffect(() => { if (open) { setF({ packId: packId || data.packs[0]?.id || "", quantite: "", motif: "casse", note: "" }); setErr(""); } }, [open, packId]);
+  const pack = data.packs.find((p) => p.id === f.packId);
+  const q = Number(f.quantite) || 0;
+  const valider = () => {
+    if (!pack) return setErr("Choisissez un produit.");
+    if (!(q > 0)) return setErr("Indiquez la quantité.");
+    if (q > pack.stock) return setErr(`Stock insuffisant (${pack.stock} en stock).`);
+    update((d) => ({ ...d, packs: d.packs.map((p) => (p.id === pack.id ? { ...p, stock: p.stock - q } : p)) }));
+    sync(["POST", "/api/stocks/sortie", { pack_id: pack.id, quantite: q, motif: f.motif, note: f.note.trim() }]);
+    toast({ title: `−${q} ${pack.nom}`, desc: MOTIFS_STOCK[f.motif].label });
+    onClose();
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Sortie de stock" size="md"
+      footer={<><Btn onClick={onClose}>Annuler</Btn><Btn variant="critical" icon={PackageMinus} onClick={valider}>Retirer du stock</Btn></>}>
+      <div className="form-grid">
+        <Field label="Produit" className="full"><Select value={f.packId || ""} onChange={(e) => setF({ ...f, packId: e.target.value })}>{data.packs.map((p) => <option key={p.id} value={p.id}>{p.nom} — {p.stock} en stock</option>)}</Select></Field>
+        <Field label="Quantité" error={err}><Input value={f.quantite || ""} onChange={(e) => { setF({ ...f, quantite: e.target.value.replace(/[^\d]/g, "") }); setErr(""); }} inputMode="numeric" suffix="unités" placeholder="0" data-autofocus /></Field>
+        <Field label="Motif"><Select value={f.motif || "casse"} onChange={(e) => setF({ ...f, motif: e.target.value })}><option value="casse">Casse / perte / vol</option><option value="ajustement">Ajustement (usage interne, cadeau…)</option></Select></Field>
+        <Field label="Commentaire" optional className="full"><Input value={f.note || ""} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="Ex : carton abîmé à la livraison" /></Field>
+      </div>
+    </Modal>
+  );
+}
+
+function InventaireModal({ open, onClose }) {
+  const { data, update, sync, toast } = useApp();
+  const [reel, setReel] = useState({});
+  useEffect(() => { if (open) setReel(Object.fromEntries(data.packs.map((p) => [p.id, String(p.stock)]))); }, [open]);
+  const ecarts = data.packs.map((p) => ({ p, apres: reel[p.id] === "" || reel[p.id] == null ? p.stock : Number(reel[p.id]) })).filter((x) => x.apres !== x.p.stock);
+  const valider = () => {
+    if (!ecarts.length) { onClose(); return; }
+    const m = new Map(ecarts.map((x) => [x.p.id, x.apres]));
+    update((d) => ({ ...d, packs: d.packs.map((p) => (m.has(p.id) ? { ...p, stock: m.get(p.id) } : p)) }));
+    sync(["POST", "/api/stocks/inventaire", { lignes: ecarts.map((x) => ({ pack_id: x.p.id, stock_reel: x.apres })) }]);
+    toast({ title: "Inventaire enregistré", desc: `${ecarts.length} écart${ecarts.length > 1 ? "s" : ""} corrigé${ecarts.length > 1 ? "s" : ""}` });
+    onClose();
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Inventaire (comptage physique)" size="lg"
+      footer={<><span className="subtle spacer">{ecarts.length ? `${ecarts.length} écart(s) à corriger` : "Aucun écart"}</span><Btn onClick={onClose}>Annuler</Btn><Btn variant="primary" icon={ClipboardList} onClick={valider}>Valider l'inventaire</Btn></>}>
+      <p className="subtle" style={{ marginBottom: 12 }}>Saisissez la quantité réellement comptée en boutique. Les écarts sont corrigés et tracés dans le journal des mouvements.</p>
+      <div className="table-scroll">
+        <table className="table">
+          <thead><tr><th>Produit</th><th className="right">Théorique</th><th style={{ width: 130 }}>Compté</th><th className="right">Écart</th></tr></thead>
+          <tbody>
+            {data.packs.map((p) => {
+              const v = reel[p.id] ?? "";
+              const d = v === "" ? 0 : Number(v) - p.stock;
+              return (
+                <tr key={p.id}>
+                  <td><div className="cell-product"><Thumb pack={p} size="sm" /><div className="cell-main">{p.nom}</div></div></td>
+                  <td className="right num">{p.stock}</td>
+                  <td><Input value={v} onChange={(e) => setReel((r) => ({ ...r, [p.id]: e.target.value.replace(/[^\d]/g, "") }))} inputMode="numeric" /></td>
+                  <td className="right num strong" style={{ color: d > 0 ? "var(--success-dot)" : d < 0 ? "var(--critical-solid)" : undefined }}>{d > 0 ? "+" + d : d || "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Modal>
+  );
+}
+
+function PageStocks({ route }) {
+  const { data, mode, go } = useApp();
+  const [q, setQ] = useState("");
+  const [tab, setTab] = useState("tous");
+  const [modal, setModal] = useState(route.id === "reception" ? { type: "reception" } : null);
+  const [mvts, setMvts] = useState(null);
+  const [mvtPack, setMvtPack] = useState("");
+  const signature = data.packs.map((p) => p.id + ":" + p.stock).join(",");
+
+  useEffect(() => {
+    if (mode !== "api") return;
+    let actif = true;
+    const t = setTimeout(() => apiFetch("GET", `/api/stocks/mouvements?limite=150${mvtPack ? "&pack_id=" + encodeURIComponent(mvtPack) : ""}`)
+      .then((r) => actif && setMvts(r)).catch(() => actif && setMvts([])), 600);
+    return () => { actif = false; clearTimeout(t); };
+  }, [mode, mvtPack, signature]);
+
+  const vendus30 = useMemo(() => {
+    const depuis = isoDate(addDays(today(), -30));
+    const m = new Map();
+    enrichVentes(data).filter((v) => isValid(v) && v.date >= depuis).forEach((v) => m.set(v.packId, (m.get(v.packId) || 0) + v.qte));
+    return m;
+  }, [data]);
+
+  const filtres = { tous: () => true, alerte: (p) => p.stock > 0 && p.stock <= seuilDe(p), rupture: (p) => p.stock <= 0, brouillons: (p) => p.actif === false };
+  const rows = data.packs.filter((p) => filtres[tab](p) && norm(p.nom + " " + p.sku).includes(norm(q))).sort((a, b) => (a.stock - seuilDe(a)) - (b.stock - seuilDe(b)));
+  const unites = data.packs.reduce((s, p) => s + p.stock, 0);
+  const valeurAchat = data.packs.reduce((s, p) => s + p.stock * (p.cout || 0), 0);
+  const valeurVente = data.packs.reduce((s, p) => s + p.stock * prixEffectif(p), 0);
+  const alertes = data.packs.filter((p) => p.actif !== false && p.stock <= seuilDe(p)).length;
+  const couverture = (p) => { const v = vendus30.get(p.id) || 0; return v ? Math.floor(p.stock / (v / 30)) : null; };
+
+  const kpis = [
+    { label: "Unités en stock", value: unites, f: fmtNum, icon: Boxes, tint: 4 },
+    { label: "Valeur au prix d'achat", value: valeurAchat, f: fmt, icon: Wallet, tint: 3 },
+    { label: "Valeur au prix de vente", value: valeurVente, f: fmt, icon: TrendingUp, tint: 0 },
+    { label: "Produits en alerte", value: alertes, f: fmtNum, icon: AlertTriangle, tint: alertes ? 3 : 0, color: alertes ? "var(--critical-solid)" : undefined },
+  ];
+
+  return (
+    <>
+      <PageHeader title="Stocks" meta="Contrôle complet de l'inventaire : entrées, sorties, comptages et historique"
+        actions={<>
+          <Btn icon={ClipboardList} onClick={() => setModal({ type: "inventaire" })} className="hide-sm">Inventaire</Btn>
+          <Btn icon={PackageMinus} onClick={() => setModal({ type: "sortie" })}>Sortie</Btn>
+          <Btn variant="primary" icon={PackagePlus} onClick={() => setModal({ type: "reception" })}>Réception</Btn>
+        </>} />
+      <div className="kpi-grid stagger">
+        {kpis.map((k, i) => (
+          <div className="card kpi" key={k.label} style={{ "--i": i }}>
+            <div className="kpi-label"><span className={cx("kpi-dot", `tint-${k.tint}`)}><k.icon size={13} /></span>{k.label}</div>
+            <div className="kpi-value" style={{ color: k.color }}><CountUp value={k.value} format={k.f} /></div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card">
+        <div className="table-toolbar">
+          <Tabs value={tab} onChange={setTab} tabs={[
+            { key: "tous", label: "Tous", count: data.packs.length },
+            { key: "alerte", label: "Stock faible", count: data.packs.filter(filtres.alerte).length },
+            { key: "rupture", label: "Rupture", count: data.packs.filter(filtres.rupture).length },
+            { key: "brouillons", label: "Brouillons", count: data.packs.filter(filtres.brouillons).length },
+          ]} />
+        </div>
+        <div className="table-filters"><SearchInput value={q} onChange={setQ} placeholder="Rechercher un produit…" /></div>
+        {rows.length === 0 ? <EmptyState icon={Boxes} title="Aucun produit">Essayez un autre filtre.</EmptyState> : (
+          <div className="table-scroll">
+            <table className="table">
+              <thead><tr><th>Produit</th><th>Stock</th><th className="hide-sm right">Seuil</th><th className="hide-sm right">Vendus 30 j</th><th className="hide-md right">Couverture</th><th className="hide-md right">Valeur (achat)</th><th style={{ width: 96 }} /></tr></thead>
+              <tbody key={tab + q}>
+                {rows.map((p, i) => {
+                  const c = couverture(p);
+                  return (
+                    <tr key={p.id} style={{ "--i": i }}>
+                      <td className="wrap"><div className="cell-product"><Thumb pack={p} size="sm" /><div><div className="cell-main">{p.nom}</div><div className="cell-sub">{p.sku}{p.actif === false ? " · brouillon" : ""}</div></div></div></td>
+                      <td><StockBadge stock={p.stock} seuil={seuilDe(p)} /></td>
+                      <td className="hide-sm right num muted">{seuilDe(p)}</td>
+                      <td className="hide-sm right num">{vendus30.get(p.id) || 0}</td>
+                      <td className="hide-md right num">{c == null ? <span className="subtle">—</span> : <span style={{ color: c < 7 ? "var(--critical-solid)" : undefined }}>{c} j</span>}</td>
+                      <td className="hide-md right num">{p.cout != null ? fmt(p.stock * p.cout) : <span className="subtle">coût ?</span>}</td>
+                      <td className="right"><span className="row" style={{ gap: 2, justifyContent: "flex-end" }}>
+                        <button className="icon-btn" title="Réception" aria-label={`Réceptionner ${p.nom}`} onClick={() => setModal({ type: "reception", packId: p.id })}><PackagePlus size={15} /></button>
+                        <button className="icon-btn" title="Sortie" aria-label={`Sortie de ${p.nom}`} onClick={() => setModal({ type: "sortie", packId: p.id })}><PackageMinus size={15} /></button>
+                        <button className="icon-btn" title="Modifier le produit" aria-label={`Modifier ${p.nom}`} onClick={() => go("produits", p.id)}><Pencil size={14} /></button>
+                      </span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <Card title="Journal des mouvements" sub="Chaque entrée et sortie de stock, avec son auteur" padded={false}
+        actions={mode === "api" && <Select value={mvtPack} onChange={(e) => setMvtPack(e.target.value)} style={{ width: 200 }} aria-label="Produit"><option value="">Tous les produits</option>{data.packs.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}</Select>}>
+        <div style={{ height: 12 }} />
+        {mode !== "api" ? <EmptyState icon={History} title="Disponible avec le serveur">Le journal des mouvements est enregistré par le serveur.</EmptyState>
+          : mvts == null ? <div className="pdf-attente"><span className="spinner" />Chargement…</div>
+          : mvts.length === 0 ? <EmptyState icon={History} title="Aucun mouvement" /> : (
+            <div className="table-scroll">
+              <table className="table">
+                <thead><tr><th>Date</th><th>Produit</th><th>Motif</th><th className="right">Mouvement</th><th className="right hide-sm">Stock après</th><th className="hide-md">Détail</th></tr></thead>
+                <tbody>
+                  {mvts.map((m, i) => (
+                    <tr key={m.id} style={{ "--i": Math.min(i, 20) }}>
+                      <td className="muted">{fmtDateTime(m.cree_le)}</td>
+                      <td className="wrap">{m.pack_nom || <span className="subtle">Produit supprimé</span>}</td>
+                      <td><Badge tone={MOTIFS_STOCK[m.motif]?.tone || "neutral"}>{MOTIFS_STOCK[m.motif]?.label || m.motif_libelle}</Badge></td>
+                      <td className="right num strong" style={{ color: m.delta > 0 ? "var(--success-dot)" : "var(--critical-solid)" }}>{m.delta > 0 ? "+" + m.delta : m.delta}</td>
+                      <td className="right num hide-sm">{m.stock_apres}</td>
+                      <td className="hide-md subtle wrap">{[m.reference, m.note, m.auteur_nom && "par " + m.auteur_nom].filter(Boolean).join(" · ") || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </Card>
+
+      <ReceptionModal open={modal?.type === "reception"} packId={modal?.packId} onClose={() => { setModal(null); if (route.id) go("stocks"); }} />
+      <SortieModal open={modal?.type === "sortie"} packId={modal?.packId} onClose={() => setModal(null)} />
+      <InventaireModal open={modal?.type === "inventaire"} onClose={() => setModal(null)} />
+    </>
+  );
+}
+
+/* =====================================================================
+   PAGE : Marketing (administrateur) — fidélisation, campagnes, promotions
+   ===================================================================== */
+const TYPES_CAMPAGNE = [
+  { value: "bonne_semaine", label: "Bonne semaine", icon: Sun },
+  { value: "promotion", label: "Promotion", icon: Percent },
+  { value: "nouveautes", label: "Nouveautés", icon: Sparkles },
+  { value: "libre", label: "Message libre", icon: MessageSquare },
+];
+const JOURS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+const AIDE_VARIABLES = "Variables : {prenom}, {boutique}, {lien}, {promos}, {nouveautes}, {promos_detail}, {nouveautes_detail}";
+
+function CanauxChoix({ value, onChange }) {
+  const t = (c) => onChange(value.includes(c) ? value.filter((x) => x !== c) : [...value, c]);
+  return (
+    <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
+      <Checkbox checked={value.includes("sms")} onChange={() => t("sms")} label="SMS" />
+      <Checkbox checked={value.includes("email")} onChange={() => t("email")} label="E-mail" />
+    </div>
+  );
+}
+
+/* Aperçu en direct : nombre de destinataires + message tel que reçu */
+function useApercuCampagne(open, { audience, canaux, type, message }) {
+  const [a, setA] = useState(null);
+  useEffect(() => {
+    if (!open) return;
+    let actif = true;
+    const t = setTimeout(() => apiFetch("POST", "/api/campagnes/apercu", { audience, canaux, type, message })
+      .then((r) => actif && setA(r)).catch(() => actif && setA(null)), 350);
+    return () => { actif = false; clearTimeout(t); };
+  }, [open, audience, canaux.join(","), type, message]);
+  return a;
+}
+
+function ApercuMessage({ a, canaux }) {
+  if (!a) return <div className="pdf-attente"><span className="spinner" />Calcul des destinataires…</div>;
+  return (
+    <div className="apercu-message">
+      <div className="row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <Badge tone="info" icon={Users}>{a.destinataires} destinataire{a.destinataires > 1 ? "s" : ""}</Badge>
+        {canaux.includes("sms") && <Badge icon={Smartphone}>{a.sms} SMS</Badge>}
+        {canaux.includes("email") && <Badge icon={Mail}>{a.email} e-mail{a.email > 1 ? "s" : ""}</Badge>}
+      </div>
+      {a.exemple ? <div className="bulle-sms">{a.exemple}</div> : <div className="subtle">Le message est vide.</div>}
+      {a.destinataires === 0 && <div className="field-error" style={{ marginTop: 8 }}><AlertCircle size={14} />Aucun client abonné dans cette audience.</div>}
+    </div>
+  );
+}
+
+function CampagneModal({ open, preset, info, onClose, onLancee }) {
+  const { toast } = useApp();
+  const [f, setF] = useState({ titre: "", type: "bonne_semaine", message: "", audience: "tous", canaux: ["sms", "email"] });
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const type = preset?.type || "bonne_semaine";
+    setF({ titre: preset?.titre || "", type, message: info?.modeles?.[type] || "", audience: preset?.audience || "tous", canaux: ["sms", "email"] });
+    setBusy(false);
+  }, [open]);
+  const a = useApercuCampagne(open, f);
+  const choisirType = (type) => setF((s) => ({ ...s, type, message: info?.modeles?.[type] ?? s.message }));
+  const lancer = async () => {
+    if (!f.message.trim()) return toast({ title: "Le message est vide", tone: "critical" });
+    if (!f.canaux.length) return toast({ title: "Choisissez au moins un canal", tone: "critical" });
+    setBusy(true);
+    try {
+      const c = await apiFetch("POST", "/api/campagnes", { ...f, titre: f.titre.trim() || TYPES_CAMPAGNE.find((t) => t.value === f.type)?.label });
+      toast({ title: "Campagne lancée", desc: `${c.nb_destinataires} client(s)${c.simule ? " — envoi simulé" : ""}` });
+      onLancee?.();
+      onClose();
+    } catch (e) { toast({ title: "Lancement impossible", desc: e.message, tone: "critical" }); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Nouvelle campagne" size="lg"
+      footer={<><Btn onClick={onClose}>Annuler</Btn><Btn variant="primary" icon={Send} loading={busy} disabled={a && a.destinataires === 0} onClick={lancer}>Envoyer{a ? ` à ${a.destinataires} client${a.destinataires > 1 ? "s" : ""}` : ""}</Btn></>}>
+      <div className="stack">
+        <Field label="Type de message"><Segmented full value={f.type} onChange={choisirType} options={TYPES_CAMPAGNE} /></Field>
+        <div className="form-grid">
+          <Field label="Titre (interne)" optional><Input value={f.titre} onChange={(e) => setF({ ...f, titre: e.target.value })} placeholder="Ex : Fête des mères" /></Field>
+          <Field label="Audience"><Select value={f.audience} onChange={(e) => setF({ ...f, audience: e.target.value })}>{Object.entries(info?.audiences || { tous: "Tous les clients abonnés" }).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
+        </div>
+        <Field label="Message" help={AIDE_VARIABLES}><textarea className="textarea" rows={4} value={f.message} onChange={(e) => setF({ ...f, message: e.target.value })} /></Field>
+        <Field label="Canaux"><CanauxChoix value={f.canaux} onChange={(canaux) => setF({ ...f, canaux })} /></Field>
+        <Field label="Aperçu (premier destinataire)"><ApercuMessage a={a} canaux={f.canaux} /></Field>
+      </div>
+    </Modal>
+  );
+}
+
+function PromotionModal({ open, onClose, onLancee }) {
+  const { data, update, mode, toast, rafraichir } = useApp();
+  const [f, setF] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    if (open) { setF({ ids: [], mode: "pourcentage", valeur: "20", fin: isoDate(addDays(new Date(), 7)), alerter: mode === "api", canaux: ["sms", "email"], audience: "tous" }); setErr(""); setBusy(false); }
+  }, [open]);
+  const packs = data.packs.filter((p) => p.actif !== false);
+  const v = Number(f.valeur) || 0;
+  const nouveauPrix = (p) => (f.mode === "prix" ? Math.round(v) : Math.round((p.prix * (100 - v)) / 100 / 5) * 5);
+  const ids = f.ids || [];
+  const toggle = (id) => setF((s) => ({ ...s, ids: s.ids.includes(id) ? s.ids.filter((x) => x !== id) : [...s.ids, id] }));
+  const a = useApercuCampagne(open && mode === "api" && f.alerter, { audience: f.audience || "tous", canaux: f.canaux || [], type: "promotion", message: "" });
+  const lancer = async () => {
+    if (!ids.length) return setErr("Choisissez au moins un produit.");
+    if (f.mode === "pourcentage" && !(v > 0 && v < 100)) return setErr("Réduction entre 1 et 99 %.");
+    const invalides = ids.map((id) => data.packs.find((p) => p.id === id)).filter((p) => !(nouveauPrix(p) > 0 && nouveauPrix(p) < p.prix));
+    if (invalides.length) return setErr(`Prix promotionnel invalide pour : ${invalides.map((p) => p.nom).join(", ")}`);
+    const fin = f.fin ? (() => { const d = parseDate(f.fin); d.setHours(23, 59, 59, 0); return d.toISOString(); })() : null;
+    if (mode !== "api") {
+      update((d) => ({ ...d, packs: d.packs.map((p) => (ids.includes(p.id) ? { ...p, prixPromo: nouveauPrix(p), promoFin: fin } : p)) }));
+      toast({ title: "Promotion appliquée", desc: `${ids.length} produit(s)` });
+      onClose();
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await apiFetch("POST", "/api/campagnes/promotion", { pack_ids: ids, mode: f.mode, valeur: v, fin, alerter: f.alerter, canaux: f.canaux, audience: f.audience });
+      await rafraichir();
+      toast({ title: "Promotion lancée 🎉", desc: r.campagne ? `${r.campagne.nb_destinataires} client(s) alerté(s)${r.campagne.simule ? " (envoi simulé)" : ""}` : `${r.packs.length} produit(s) en promotion` });
+      onLancee?.();
+      onClose();
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Lancer une promotion" size="lg"
+      footer={<><Btn onClick={onClose}>Annuler</Btn><Btn variant="brand" icon={Percent} loading={busy} onClick={lancer}>{f.alerter ? "Lancer et alerter les clients" : "Appliquer la promotion"}</Btn></>}>
+      <div className="stack">
+        <Field label={`Produits (${ids.length} sélectionné${ids.length > 1 ? "s" : ""})`}>
+          <div className="promo-liste">
+            {packs.map((p) => (
+              <label key={p.id} className={cx("promo-item", ids.includes(p.id) && "on")}>
+                <Checkbox checked={ids.includes(p.id)} onChange={() => toggle(p.id)} />
+                <Thumb pack={p} size="sm" />
+                <span className="grow truncate">{p.nom}</span>
+                <span className="num">{ids.includes(p.id) && nouveauPrix(p) > 0 && nouveauPrix(p) < p.prix ? <><span className="prix-barre">{fmt(p.prix)}</span> <b>{fmt(nouveauPrix(p))}</b></> : fmt(prixEffectif(p))}</span>
+              </label>
+            ))}
+          </div>
+        </Field>
+        <div className="form-grid">
+          <Field label="Type de remise"><Segmented full value={f.mode} onChange={(m) => setF({ ...f, mode: m, valeur: m === "prix" ? "" : "20" })} options={[{ value: "pourcentage", label: "Pourcentage" }, { value: "prix", label: "Prix fixe" }]} /></Field>
+          <Field label={f.mode === "prix" ? "Nouveau prix" : "Réduction"}><Input value={f.valeur || ""} onChange={(e) => { setF({ ...f, valeur: e.target.value.replace(/[^\d]/g, "") }); setErr(""); }} inputMode="numeric" suffix={f.mode === "prix" ? "FCFA" : "%"} /></Field>
+          <Field label="Fin de la promotion" optional><Input type="date" value={f.fin || ""} min={isoDate(addDays(new Date(), 1))} onChange={(e) => setF({ ...f, fin: e.target.value })} /></Field>
+          <Field label="Audience alertée"><Select value={f.audience || "tous"} onChange={(e) => setF({ ...f, audience: e.target.value })} disabled={!f.alerter}><option value="tous">Tous les clients abonnés</option><option value="vip">Clients VIP</option><option value="fideles">Clients fidèles</option><option value="inactifs">Clients inactifs (30 j)</option></Select></Field>
+        </div>
+        <div className="card" style={{ padding: 14, boxShadow: "none", border: "1px solid var(--border)" }}>
+          <div className="row-between">
+            <div><div className="strong">Alerter automatiquement les clients</div><div className="subtle">{mode === "api" ? "SMS et/ou e-mail aux clients ayant accepté de recevoir nos offres." : "Disponible une fois connecté au serveur."}</div></div>
+            <Switch on={!!f.alerter} onChange={(x) => mode === "api" && setF({ ...f, alerter: x })} label="Alerter les clients" />
+          </div>
+          {f.alerter && <div style={{ marginTop: 12 }} className="stack-sm"><CanauxChoix value={f.canaux || []} onChange={(canaux) => setF({ ...f, canaux })} /><ApercuMessage a={a} canaux={f.canaux || []} /><div className="help">Le message reprendra les prix promotionnels une fois la promotion appliquée.</div></div>}
+        </div>
+        {err && <div className="field-error"><AlertCircle size={14} />{err}</div>}
+      </div>
+    </Modal>
+  );
+}
+
+function CampagneDetailModal({ id, onClose }) {
+  const [c, setC] = useState(null);
+  useEffect(() => { setC(null); if (id) apiFetch("GET", `/api/campagnes/${id}`).then(setC).catch(() => setC({ erreur: true })); }, [id]);
+  return (
+    <Modal open={!!id} onClose={onClose} title={c?.titre || "Campagne"} size="lg" footer={<Btn onClick={onClose}>Fermer</Btn>}>
+      {!c ? <div className="pdf-attente"><span className="spinner" />Chargement…</div> : c.erreur ? <EmptyState icon={AlertCircle} title="Campagne introuvable" /> : (
+        <div className="stack">
+          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <Badge tone={c.statut === "envoyee" ? "success" : "info"} dot>{c.statut === "envoyee" ? "Envoyée" : "En cours"}</Badge>
+            {c.simule ? <Badge tone="warning">Simulée</Badge> : null}
+            {c.automatique ? <Badge icon={CalendarClock}>Automatique</Badge> : null}
+            <span className="subtle">{fmtDateTime(c.cree_le)}</span>
+          </div>
+          <div className="bulle-sms">{c.message}</div>
+          <div className="table-scroll">
+            <table className="table">
+              <thead><tr><th>Client</th><th>Canal</th><th className="hide-sm">Destinataire</th><th>Statut</th></tr></thead>
+              <tbody>
+                {c.envois.map((e) => (
+                  <tr key={e.id}>
+                    <td>{e.client_nom || "—"}</td>
+                    <td>{e.canal === "sms" ? "SMS" : "E-mail"}</td>
+                    <td className="hide-sm muted">{e.destinataire}</td>
+                    <td><Badge tone={e.statut === "envoye" ? "success" : e.statut === "simule" ? "warning" : "critical"}>{e.statut === "envoye" ? "Envoyé" : e.statut === "simule" ? "Simulé" : "Échec"}</Badge>{e.erreur && <div className="cell-sub">{e.erreur}</div>}</td>
+                  </tr>
+                ))}
+                {c.envois.length === 0 && <tr><td colSpan={4} className="subtle">Aucun envoi.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function CarteHebdo({ info, onMaj }) {
+  const { toast } = useApp();
+  const [h, setH] = useState(null);
+  const [busy, setBusy] = useState("");
+  useEffect(() => { if (info?.hebdo) setH({ actif: info.hebdo.actif === "1", jour: Number(info.hebdo.jour), heure: Number(info.hebdo.heure), canaux: String(info.hebdo.canaux || "").split(",").filter(Boolean), message: info.hebdo.message }); }, [info]);
+  const a = useApercuCampagne(!!h, { audience: "tous", canaux: h?.canaux || [], type: "bonne_semaine", message: h?.message || "" });
+  if (!h) return null;
+  const enregistrer = async (patch = {}) => {
+    const n = { ...h, ...patch };
+    setH(n); setBusy("save");
+    try { await apiFetch("PUT", "/api/campagnes/hebdo", n); toast({ title: n.actif ? `Message automatique activé (${JOURS[n.jour].toLowerCase()} ${n.heure} h)` : "Message automatique désactivé" }); onMaj(); }
+    catch (e) { toast({ title: "Enregistrement impossible", desc: e.message, tone: "critical" }); }
+    finally { setBusy(""); }
+  };
+  const maintenant = async () => {
+    setBusy("now");
+    try { const c = await apiFetch("POST", "/api/campagnes/hebdo/maintenant"); toast({ title: "Message de la semaine envoyé", desc: `${c.nb_destinataires} client(s)${c.simule ? " — simulé" : ""}` }); onMaj(); }
+    catch (e) { toast({ title: "Envoi impossible", desc: e.message, tone: "critical" }); }
+    finally { setBusy(""); }
+  };
+  return (
+    <Card title="Message automatique de début de semaine" sub="Bonne semaine + nouveautés + promotions en cours, envoyé chaque semaine aux clients abonnés"
+      actions={<Switch on={h.actif} onChange={(v) => enregistrer({ actif: v })} label="Activer le message automatique" />}>
+      <div className="stack">
+        <div className="form-grid">
+          <Field label="Jour d'envoi"><Select value={h.jour} onChange={(e) => setH({ ...h, jour: Number(e.target.value) })}>{[1, 2, 3, 4, 5, 6, 0].map((j) => <option key={j} value={j}>{JOURS[j]}</option>)}</Select></Field>
+          <Field label="Heure (Abidjan)"><Select value={h.heure} onChange={(e) => setH({ ...h, heure: Number(e.target.value) })}>{[...Array(24)].map((_, k) => <option key={k} value={k}>{pad(k)} h 00</option>)}</Select></Field>
+        </div>
+        <Field label="Message" help={AIDE_VARIABLES}><textarea className="textarea" rows={3} value={h.message} onChange={(e) => setH({ ...h, message: e.target.value })} /></Field>
+        <Field label="Canaux"><CanauxChoix value={h.canaux} onChange={(canaux) => setH({ ...h, canaux })} /></Field>
+        <Field label="Aperçu"><ApercuMessage a={a} canaux={h.canaux} /></Field>
+        <div className="row" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+          {info.hebdo.dernier && <span className="subtle spacer">Dernier envoi : semaine {info.hebdo.dernier}</span>}
+          <Btn icon={Send} loading={busy === "now"} onClick={maintenant}>Envoyer maintenant</Btn>
+          <Btn variant="primary" loading={busy === "save"} onClick={() => enregistrer()}>Enregistrer</Btn>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function PageMarketing({ route }) {
+  const { data, mode, go, toast, update, sync, confirm } = useApp();
+  const [info, setInfo] = useState(null);
+  const [compose, setCompose] = useState(null);
+  const [promo, setPromo] = useState(route.id === "promotion");
+  const [detail, setDetail] = useState(null);
+  const charger = useCallback(() => {
+    if (mode !== "api") return;
+    apiFetch("GET", "/api/campagnes").then(setInfo).catch((e) => toast({ title: "Marketing indisponible", desc: e.message, tone: "critical" }));
+  }, [mode]);
+  useEffect(() => { charger(); }, [charger]);
+  // Les campagnes partent en arrière-plan : on rafraîchit l'historique tant qu'une est en cours
+  useEffect(() => {
+    if (!info?.campagnes?.some((c) => c.statut !== "envoyee")) return;
+    const t = setTimeout(charger, 2500);
+    return () => clearTimeout(t);
+  }, [info]);
+
+  // Plan de fidélisation : segments calculés sur l'historique d'achat
+  const segments = useMemo(() => {
+    const st = new Map();
+    enrichVentes(data).filter(isValid).forEach((v) => {
+      const o = st.get(v.clientId) || { cmds: new Set(), total: 0, last: "" };
+      o.cmds.add(v.commandeId || v.id); o.total += v.total;
+      if (v.date > o.last) o.last = v.date;
+      st.set(v.clientId, o);
+    });
+    const il30 = isoDate(addDays(today(), -30));
+    const ab = (l) => l.filter((c) => c.consentement).length;
+    const s = (c) => st.get(c.id);
+    const vip = data.clients.filter((c) => c.statut === "VIP");
+    const fideles = data.clients.filter((c) => (s(c)?.cmds.size || 0) >= 2);
+    const inactifs = data.clients.filter((c) => s(c) && s(c).last < il30);
+    const nouveaux = data.clients.filter((c) => c.dateAjout && c.dateAjout >= il30);
+    return [
+      { key: "vip", titre: "Clients VIP", icon: Star, tint: 1, liste: vip, conseil: "Remerciez-les avec une offre exclusive ou un accès en avant-première.", type: "promotion" },
+      { key: "fideles", titre: "Clients fidèles (2 achats et +)", icon: Gift, tint: 0, liste: fideles, conseil: "Proposez une remise fidélité pour leur prochain achat.", type: "promotion" },
+      { key: "inactifs", titre: "Sans achat depuis 30 jours", icon: Clock, tint: 3, liste: inactifs, conseil: "Relancez-les avec les nouveautés ou une promotion limitée.", type: "nouveautes" },
+      { key: null, titre: "Nouveaux clients (30 jours)", icon: UserPlus, tint: 4, liste: nouveaux, conseil: "Souhaitez-leur la bienvenue et présentez la boutique.", type: "bonne_semaine" },
+    ].map((x) => ({ ...x, abonnes: ab(x.liste) }));
+  }, [data]);
+
+  const abonnes = data.clients.filter((c) => c.consentement).length;
+  const stats = info?.stats || { clients: data.clients.length, abonnes, joignables_sms: abonnes, joignables_email: data.clients.filter((c) => c.consentement && c.email).length };
+  const promos = data.packs.filter(promoActive);
+  const arreterPromo = async (p) => {
+    if (!(await confirm({ title: `Arrêter la promotion sur ${p.nom} ?`, message: `Le prix revient à ${fmt(p.prix)}.`, confirmLabel: "Arrêter" }))) return;
+    update((d) => ({ ...d, packs: d.packs.map((x) => (x.id === p.id ? { ...x, prixPromo: null, promoFin: null } : x)) }));
+    sync(["DELETE", `/api/campagnes/promotion/${p.id}`]);
+    toast({ title: "Promotion arrêtée", desc: p.nom });
+  };
+  const kpis = [
+    { label: "Clients", value: stats.clients, icon: Users, tint: 4 },
+    { label: "Abonnés marketing", value: stats.abonnes, icon: Megaphone, tint: 0, sub: stats.clients ? `${Math.round((stats.abonnes / stats.clients) * 100)} % des clients` : null },
+    { label: "Joignables par SMS", value: stats.joignables_sms, icon: Smartphone, tint: 1 },
+    { label: "Joignables par e-mail", value: stats.joignables_email, icon: Mail, tint: 5 },
+  ];
+
+  return (
+    <>
+      <PageHeader title="Marketing" meta="Fidélisation, campagnes SMS / e-mail et promotions"
+        actions={<>
+          {mode === "api" && <Btn icon={Send} onClick={() => setCompose({})}>Nouvelle campagne</Btn>}
+          <Btn variant="primary" icon={Percent} onClick={() => setPromo(true)}>Lancer une promotion</Btn>
+        </>} />
+      {mode !== "api" && <div className="banner banner-warning" style={{ marginBottom: 16 }}><AlertTriangle size={16} /><div>Mode démo : les envois de SMS / e-mails et le message automatique nécessitent le serveur. Les promotions s'appliquent localement.</div></div>}
+      {info && (!info.fournisseurs.sms || !info.fournisseurs.email) && (
+        <div className="banner banner-warning" style={{ marginBottom: 16 }}><Info size={16} /><div>
+          <b>Envois simulés</b> pour {[!info.fournisseurs.sms && "les SMS", !info.fournisseurs.email && "les e-mails"].filter(Boolean).join(" et ")} : les messages sont préparés et enregistrés, mais pas réellement envoyés.
+          Ajoutez les identifiants du fournisseur ({[!info.fournisseurs.sms && "SMS_PROVIDER_*", !info.fournisseurs.email && "SMTP_*"].filter(Boolean).join(", ")}) dans les variables de l'hébergement pour les envoyer réellement.
+        </div></div>
+      )}
+      <div className="kpi-grid stagger">
+        {kpis.map((k, i) => (
+          <div className="card kpi" key={k.label} style={{ "--i": i }}>
+            <div className="kpi-label"><span className={cx("kpi-dot", `tint-${k.tint}`)}><k.icon size={13} /></span>{k.label}</div>
+            <div className="kpi-value"><CountUp value={k.value} format={fmtNum} /></div>
+            {k.sub && <div className="subtle">{k.sub}</div>}
+          </div>
+        ))}
+      </div>
+
+      <Card title="Plan de fidélisation" sub="Vos clients regroupés selon leurs achats — seuls les abonnés reçoivent les messages">
+        <div className="segments">
+          {segments.map((s) => (
+            <div key={s.titre} className="segment">
+              <div className="row" style={{ gap: 10 }}><span className={cx("todo-icon", `tint-${s.tint}`)}><s.icon size={15} /></span><div className="grow"><div className="strong">{s.titre}</div><div className="subtle">{s.liste.length} client{s.liste.length > 1 ? "s" : ""} · {s.abonnes} abonné{s.abonnes > 1 ? "s" : ""}</div></div></div>
+              <p className="subtle">{s.conseil}</p>
+              {mode === "api" && s.key && <Btn size="sm" icon={Send} disabled={!s.abonnes} onClick={() => setCompose({ audience: s.key, type: s.type, titre: s.titre })}>Contacter</Btn>}
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <div className="grid-main">
+        {mode === "api" ? (info ? <CarteHebdo info={info} onMaj={charger} /> : <Card title="Message automatique"><div className="pdf-attente"><span className="spinner" />Chargement…</div></Card>) : <Card title="Message automatique de début de semaine"><EmptyState icon={CalendarClock} title="Disponible avec le serveur" /></Card>}
+        <Card title="Promotions en cours" sub={promos.length ? `${promos.length} produit${promos.length > 1 ? "s" : ""}` : null}
+          actions={<Btn size="sm" icon={Plus} onClick={() => setPromo(true)}>Ajouter</Btn>}>
+          {promos.length === 0 ? <EmptyState icon={Percent} title="Aucune promotion">Lancez une promotion : les clients abonnés sont alertés automatiquement.</EmptyState> : (
+            <div className="list">
+              {promos.map((p) => (
+                <div key={p.id} className="list-item">
+                  <Thumb pack={p} size="sm" />
+                  <div className="grow">
+                    <div className="row-between"><span className="strong truncate">{p.nom}</span><Badge tone="success">−{Math.round((1 - p.prixPromo / p.prix) * 100)} %</Badge></div>
+                    <div className="row-between"><span className="num"><b>{fmt(p.prixPromo)}</b> <span className="prix-barre">{fmt(p.prix)}</span></span><span className="subtle">{p.promoFin ? "jusqu'au " + fmtDateCourt(isoDate(new Date(p.promoFin))) : "sans fin"}</span></div>
+                  </div>
+                  <button className="icon-btn danger" onClick={() => arreterPromo(p)} aria-label={`Arrêter la promotion ${p.nom}`}><X size={15} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {mode === "api" && (
+        <Card title="Historique des campagnes" padded={false}>
+          <div style={{ height: 12 }} />
+          {!info ? <div className="pdf-attente"><span className="spinner" />Chargement…</div> : info.campagnes.length === 0 ? <EmptyState icon={Megaphone} title="Aucune campagne envoyée">Lancez une promotion ou une campagne pour fidéliser vos clients.</EmptyState> : (
+            <div className="table-scroll">
+              <table className="table">
+                <thead><tr><th>Campagne</th><th className="hide-sm">Canaux</th><th className="right">Destinataires</th><th className="right hide-sm">Envoyés</th><th>Statut</th></tr></thead>
+                <tbody>
+                  {info.campagnes.map((c, i) => (
+                    <tr key={c.id} className="clickable" style={{ "--i": Math.min(i, 20) }} onClick={() => setDetail(c.id)}>
+                      <td className="wrap"><div className="cell-main">{c.titre}{c.automatique ? <CalendarClock size={13} style={{ marginLeft: 6, verticalAlign: -2 }} /> : null}</div><div className="cell-sub">{fmtDateTime(c.cree_le)} · {info.audiences[c.audience] || c.audience}</div></td>
+                      <td className="hide-sm muted">{String(c.canaux).split(",").map((x) => (x === "sms" ? "SMS" : "E-mail")).join(" + ")}</td>
+                      <td className="right num">{c.nb_destinataires}</td>
+                      <td className="right num hide-sm">{c.nb_envoyes}{c.nb_echecs ? <span style={{ color: "var(--critical-solid)" }}> · {c.nb_echecs} échec(s)</span> : null}</td>
+                      <td><span className="row" style={{ gap: 4 }}><Badge tone={c.statut === "envoyee" ? "success" : "info"} dot>{c.statut === "envoyee" ? "Envoyée" : "En cours"}</Badge>{c.simule ? <Badge tone="warning">Simulée</Badge> : null}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {mode === "api" && <CampagneModal open={!!compose} preset={compose} info={info} onClose={() => setCompose(null)} onLancee={charger} />}
+      <PromotionModal open={promo} onClose={() => { setPromo(false); if (route.id) go("marketing"); }} onLancee={charger} />
+      {mode === "api" && <CampagneDetailModal id={detail} onClose={() => setDetail(null)} />}
     </>
   );
 }
@@ -3627,7 +4452,9 @@ function App() {
 
   useEffect(() => { mainRef.current?.scrollTo({ top: 0, behavior: "instant" }); setDrawer(false); }, [route.page, route.page === "commandes" || route.page === "clients" ? route.id : null]);
 
-  const ctx = { data, update, sync, replace, remplacerTout, rafraichir, mode, settings, setSettings, effectiveTheme, cycleTheme, route, go, toast, confirm, openSale, openCmdk, logout, auth: session };
+  // Rôle : le serveur fait foi (data.role) ; en démo locale, tous les droits
+  const estAdmin = mode !== "api" || (data?.role || session?.utilisateur?.role) === "admin";
+  const ctx = { data, update, sync, replace, remplacerTout, rafraichir, mode, settings, setSettings, effectiveTheme, cycleTheme, route, go, toast, confirm, openSale, openCmdk, logout, auth: session, estAdmin };
 
   if (mode === null) return <Splash texte="Connexion au serveur…" />;
   if (mode === "hors-ligne") return <ServeurIntrouvable onRetry={chercherServeur} onDemo={passerEnDemo} />;
@@ -3668,7 +4495,9 @@ function App() {
     case "produits": content = <PageProduits route={route} />; break;
     case "clients": content = isDetail ? <PageClient id={route.id} /> : <PageClients route={route} />; break;
     case "ventes": content = <PageVentes />; break;
-    case "finances": content = <PageFinances route={route} />; break;
+    case "stocks": content = estAdmin ? <PageStocks route={route} /> : <AccesReserve />; break;
+    case "marketing": content = estAdmin ? <PageMarketing route={route} /> : <AccesReserve />; break;
+    case "finances": content = estAdmin ? <PageFinances route={route} /> : <AccesReserve />; break;
     case "parametres": content = <PageParametres />; break;
     default: content = <PageAccueil />;
   }

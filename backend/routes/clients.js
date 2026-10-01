@@ -1,6 +1,7 @@
 const express = require("express");
 const db = require("../db");
 const { idOuNouveau, versIso } = require("../lib/outils");
+const { adminOnly } = require("../middleware/auth");
 const router = express.Router();
 
 const lire = (id) => db.prepare("SELECT * FROM clients WHERE id = ? AND supprime = 0").get(id);
@@ -48,8 +49,8 @@ router.post("/", (req, res) => {
   const id = idOuNouveau(req.body.id);
   if (db.prepare("SELECT id FROM clients WHERE id = ?").get(id)) return res.status(409).json({ erreur: "Identifiant déjà utilisé" });
   db.prepare(
-    "INSERT INTO clients (id, nom, telephone, email, ville, statut, notes, cree_le) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-  ).run(id, nom, telephone, email || null, ville || null, statut === "VIP" ? "VIP" : "Standard", notes || null, new Date().toISOString());
+    "INSERT INTO clients (id, nom, telephone, email, ville, statut, notes, consentement_marketing, cree_le) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(id, nom, telephone, email || null, ville || null, statut === "VIP" ? "VIP" : "Standard", notes || null, req.body.consentement_marketing ? 1 : 0, new Date().toISOString());
   res.status(201).json(serialiser(lire(id)));
 });
 
@@ -58,16 +59,17 @@ router.put("/:id", (req, res) => {
   const existant = lire(req.params.id);
   if (!existant) return res.status(404).json({ erreur: "Client introuvable" });
   const champs = { ...existant };
-  for (const k of ["nom", "telephone", "email", "ville", "statut", "notes"]) if (req.body[k] !== undefined) champs[k] = req.body[k];
+  for (const k of ["nom", "telephone", "email", "ville", "statut", "notes", "consentement_marketing"]) if (req.body[k] !== undefined) champs[k] = req.body[k];
   if (!champs.nom || !champs.telephone) return res.status(400).json({ erreur: "nom et telephone sont requis" });
   db.prepare(
-    "UPDATE clients SET nom=?, telephone=?, email=?, ville=?, statut=?, notes=? WHERE id=?"
-  ).run(champs.nom, champs.telephone, champs.email, champs.ville, champs.statut === "VIP" ? "VIP" : "Standard", champs.notes, req.params.id);
+    "UPDATE clients SET nom=?, telephone=?, email=?, ville=?, statut=?, notes=?, consentement_marketing=?, desinscrit_le=? WHERE id=?"
+  ).run(champs.nom, champs.telephone, champs.email, champs.ville, champs.statut === "VIP" ? "VIP" : "Standard", champs.notes,
+    champs.consentement_marketing ? 1 : 0, !champs.consentement_marketing && existant.consentement_marketing ? new Date().toISOString() : existant.desinscrit_le, req.params.id);
   res.json(serialiser(lire(req.params.id)));
 });
 
 // DELETE /api/clients/:id — suppression logique : ses commandes restent dans l'historique
-router.delete("/:id", (req, res) => {
+router.delete("/:id", adminOnly, (req, res) => {
   const info = db.prepare("UPDATE clients SET supprime = 1 WHERE id = ? AND supprime = 0").run(req.params.id);
   if (info.changes === 0) return res.status(404).json({ erreur: "Client introuvable" });
   res.status(204).send();

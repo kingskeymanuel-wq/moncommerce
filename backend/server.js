@@ -5,7 +5,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 
-const { authRequired } = require("./middleware/auth");
+const { authRequired, adminOnly } = require("./middleware/auth");
 
 const authRoutes = require("./routes/auth");
 const clientsRoutes = require("./routes/clients");
@@ -18,6 +18,8 @@ const donneesRoutes = require("./routes/donnees");
 const parametresRoutes = require("./routes/parametres");
 const recusRoutes = require("./routes/recus");
 const boutiqueRoutes = require("./routes/boutique");
+const stocksRoutes = require("./routes/stocks");
+const campagnesRoutes = require("./routes/campagnes");
 const { DOSSIER_UPLOADS } = require("./lib/images");
 
 const app = express();
@@ -41,6 +43,8 @@ app.use(
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "blob:"],
+        // Aperçu du ticket PDF généré dans le navigateur (blob:)
+        frameSrc: ["'self'", "blob:"],
         connectSrc: ["'self'", "https://esm.sh", "https://unpkg.com", "https://cdnjs.cloudflare.com"],
         // Désactivé : casserait l'accès en http depuis un téléphone du réseau local
         upgradeInsecureRequests: null,
@@ -81,7 +85,9 @@ app.use("/api/clients", clientsRoutes);
 app.use("/api/packs", packsRoutes);
 app.use("/api/ventes", ventesRoutes);
 app.use("/api/commandes", commandesRoutes);
-app.use("/api/investissements", investissementsRoutes);
+app.use("/api/investissements", adminOnly, investissementsRoutes);
+app.use("/api/stocks", adminOnly, stocksRoutes);
+app.use("/api/campagnes", adminOnly, campagnesRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/donnees", donneesRoutes);
 app.use("/api/parametres", parametresRoutes);
