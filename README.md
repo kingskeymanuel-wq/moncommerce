@@ -48,11 +48,18 @@ automatiquement : elle devient le premier espace, sans perte de données.
 
 ### Données de test
 
-Quand la plateforme est vide, **deux boutiques de produits de beauté** sont créées
-au démarrage (« Belle Ivoire Cosmétiques » et « Éclat Karité ») : 2 administrateurs,
-3 vendeurs, 14 produits, des clients et quelques ventes. L'écran **Mon espace**
-propose alors ces comptes de test : un clic suffit pour entrer. Ils sont définis
+Quand la plateforme est vide, **trois boutiques de beauté** sont créées au
+démarrage : « Belle Ivoire Cosmétiques » (maquillage, parfums, manucure-pédicure),
+« Éclat Karité » (soins naturels et produits capillaires) et « Reine des Mèches »
+(perruques, tissages, mèches à tresser). Soit 3 administrateurs, 4 vendeurs,
+33 produits avec photos, des clients et quelques ventes. L'écran **Mon espace**
+propose alors ces comptes de test : un clic suffit pour entrer. Tout est défini
 dans `backend/db/donnees-test.js`.
+
+Les photos sont des images d'illustration de la banque libre
+[Unsplash](https://unsplash.com/license), affichées depuis `images.unsplash.com`.
+Pour de vraies ventes, remplacez-les par les photos de vos propres produits
+(Produits → modifier → Image).
 
 Ces comptes sont publics : pour une utilisation réelle, mettez `DONNEES_TEST=0`
 (ou choisissez votre mot de passe avec `MOT_DE_PASSE_TEST`).
