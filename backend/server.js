@@ -64,7 +64,7 @@ app.use(
   rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { erreur: "Trop de tentatives, réessayez dans quelques minutes." } })
 );
 
-app.get("/api/sante", (req, res) => res.json({ statut: "ok", service: "MonCommerce API" }));
+app.get("/api/sante", (req, res) => res.json({ statut: "ok", service: "Ivoire Shop API" }));
 
 // Authentification — publique
 app.use("/api/auth", authRoutes);
@@ -113,7 +113,7 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ MonCommerce démarré
+  console.log(`✅ Ivoire Shop démarré
    Boutique client : http://localhost:${PORT}/
    Administration  : http://localhost:${PORT}/admin/`);
   if (!require("./lib/cinetpay").estConfigure()) console.log("   Paiement en ligne CinetPay : non configuré (CINETPAY_API_KEY / CINETPAY_API_PASSWORD)");

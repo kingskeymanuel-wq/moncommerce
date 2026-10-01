@@ -1,4 +1,4 @@
-# MonCommerce — plateforme de boutiques en ligne + administration
+# Ivoire Shop — plateforme de boutiques en ligne + administration
 
 Une plateforme, plusieurs espaces :
 
@@ -45,6 +45,17 @@ par téléphone + mot de passe ; un numéro = un compte sur toute la plateforme.
 
 Une installation d'une version précédente (une seule base) est reprise
 automatiquement : elle devient le premier espace, sans perte de données.
+
+### Données de test
+
+Quand la plateforme est vide, **deux boutiques de produits de beauté** sont créées
+au démarrage (« Belle Ivoire Cosmétiques » et « Éclat Karité ») : 2 administrateurs,
+3 vendeurs, 14 produits, des clients et quelques ventes. L'écran **Mon espace**
+propose alors ces comptes de test : un clic suffit pour entrer. Ils sont définis
+dans `backend/db/donnees-test.js`.
+
+Ces comptes sont publics : pour une utilisation réelle, mettez `DONNEES_TEST=0`
+(ou choisissez votre mot de passe avec `MOT_DE_PASSE_TEST`).
 
 ## 2. La boutique en ligne
 

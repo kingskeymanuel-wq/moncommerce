@@ -12,7 +12,7 @@
 async function envoyerSms(telephone, message) {
   const url = process.env.SMS_PROVIDER_URL;
   const apiKey = process.env.SMS_PROVIDER_API_KEY;
-  const expediteur = process.env.SMS_SENDER_ID || "MonCommerce";
+  const expediteur = process.env.SMS_SENDER_ID || "IvoireShop";
 
   if (!url || !apiKey) {
     // Aucun fournisseur configuré : on journalise le message au lieu de

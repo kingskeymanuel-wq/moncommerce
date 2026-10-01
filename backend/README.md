@@ -1,6 +1,6 @@
-# MonCommerce — Backend API
+# Ivoire Shop — Backend API
 
-API REST (Express + SQLite) de **MonCommerce**. Le serveur sert aussi :
+API REST (Express + SQLite) de **Ivoire Shop**. Le serveur sert aussi :
 
 - la **boutique client** sur `/` (dossier `../boutique`),
 - l'**administration** sur `/admin/` (dossier `../admin`),

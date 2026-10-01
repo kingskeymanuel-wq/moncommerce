@@ -92,6 +92,7 @@ plateforme.exec(`
     fichier  TEXT NOT NULL,            -- base SQLite de l'espace
     cree_le  TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS reglages (cle TEXT PRIMARY KEY, valeur TEXT);
   CREATE TABLE IF NOT EXISTS comptes (
     telephone    TEXT PRIMARY KEY,     -- un numéro = un compte sur toute la plateforme
     boutique_id  TEXT NOT NULL REFERENCES boutiques(id) ON DELETE CASCADE
@@ -182,7 +183,12 @@ if (boutiques.size === 0 && fs.existsSync(DB_PATH)) {
   }
 }
 
-const outils = { dansEspace, espaceCourant, listerBoutiques, boutiqueParRef, pourChaqueEspace, trouverEspace, creerBoutique, comptes };
+const reglages = {
+  lire: (cle) => plateforme.prepare("SELECT valeur FROM reglages WHERE cle = ?").get(cle)?.valeur ?? null,
+  ecrire: (cle, valeur) => plateforme.prepare("INSERT INTO reglages (cle, valeur) VALUES (?, ?) ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur").run(cle, String(valeur)),
+};
+
+const outils = { reglages, dansEspace, espaceCourant, listerBoutiques, boutiqueParRef, pourChaqueEspace, trouverEspace, creerBoutique, comptes };
 
 module.exports = new Proxy(outils, {
   get(cible, prop) {

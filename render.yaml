@@ -25,6 +25,9 @@ services:
         value: /var/data/moncommerce.db
       - key: UPLOADS_DIR
         value: /var/data/uploads
+      # Installation réelle : pas de boutiques ni de comptes de test
+      - key: DONNEES_TEST
+        value: "0"
       # Secrets générés par Render
       - key: JWT_SECRET
         generateValue: true

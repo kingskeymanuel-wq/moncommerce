@@ -9,7 +9,7 @@ import {
 import { fmt, fmtNum, lignesTicket, telechargerTicketPdf, urlTicketPdf, pdfIntegrable, genererQr, cheminQr, lienTicket, telInternational } from "/partage/ticket.js";
 
 /* =====================================================================
-   MonCommerce — page d'accueil de la plateforme et boutiques en ligne
+   Ivoire Shop — page d'accueil de la plateforme et boutiques en ligne
    La page d'accueil présente les produits de TOUS les administrateurs ; chaque
    boutique a aussi sa propre page (#/boutique/<adresse>). Une commande concerne
    une seule boutique. « Mon espace » mène au tableau de bord (administrateur ou vendeur).
@@ -20,7 +20,7 @@ const PANIER_KEY = "boutique-panier";
 const COMMANDES_KEY = "boutique-mes-commandes";
 const CLIENT_KEY = "boutique-client";
 const REF_KEY = "boutique-vendeurs"; // lien de promotion suivi : { idBoutique: idVendeur }
-const PLATEFORME = "MonCommerce";
+const PLATEFORME = "Ivoire Shop";
 /* Réglages neutres quand aucune boutique n'est concernée (page d'accueil de la plateforme) */
 const CONFIG_PLATEFORME = {
   id: null, slug: null, plateforme: true, ouverte: true,

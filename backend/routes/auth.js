@@ -73,6 +73,10 @@ function creerEspace({ nom, telephone, email, mot_de_passe, boutique }) {
   }
 })();
 
+// Plateforme vide : espaces de démonstration (boutiques de produits de beauté)
+const donneesTest = require("../db/donnees-test");
+donneesTest.installer({ creerEspace, creerUtilisateur, ecrireBoutique });
+
 // Code d'invitation (CODE_INVITATION, facultatif) : s'il est défini, il est exigé pour
 // créer un nouvel espace administrateur. Sans lui, l'inscription est ouverte à tous.
 const CODE_INVITATION = process.env.CODE_INVITATION || "";
@@ -83,7 +87,8 @@ function codeValide(code) {
 }
 
 router.get("/etat", (req, res) => {
-  res.json({ inscription_ouverte: true, code_invitation: Boolean(CODE_INVITATION), espaces: db.listerBoutiques().length });
+  // comptes_test : comptes de démonstration proposés sur l'écran de connexion (vide si DONNEES_TEST=0)
+  res.json({ inscription_ouverte: true, code_invitation: Boolean(CODE_INVITATION), espaces: db.listerBoutiques().length, comptes_test: donneesTest.comptesTest() });
 });
 
 function validerCompte(corps) {

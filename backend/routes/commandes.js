@@ -132,7 +132,7 @@ router.post("/:id/envoyer-recu", async (req, res) => {
   const telephone = cmd.contact_telephone || client?.telephone;
   if (!telephone) return res.status(400).json({ erreur: "Ce client n'a pas de numéro de téléphone" });
   const lien = `${urlPublique(req)}/#/recu/${cmd.jeton_recu}`;
-  const boutique = db.prepare("SELECT valeur FROM parametres WHERE cle = 'nom'").get()?.valeur || "MonCommerce";
+  const boutique = db.prepare("SELECT valeur FROM parametres WHERE cle = 'nom'").get()?.valeur || "Ivoire Shop";
   try {
     const envoi = await envoyerSms(telephone, `${boutique} : merci pour votre achat (${cmd.numero}). Votre ticket de caisse : ${lien}`);
     ajouterEvenement(cmd.id, { type: "note", texte: `Ticket envoyé par SMS au ${telephone}`, auteurId: req.user?.id });

@@ -1,5 +1,5 @@
 -- ============================================================
--- MonCommerce — Schéma de base de données (SQLite)
+-- Ivoire Shop — Schéma de base de données (SQLite)
 -- Compatible avec un portage direct vers MySQL / PostgreSQL /
 -- SQL Server (adapter les types AUTOINCREMENT / SERIAL / IDENTITY)
 -- Les colonnes ajoutées après la v1 sont aussi créées par les

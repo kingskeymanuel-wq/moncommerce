@@ -1,7 +1,7 @@
 {
   "name": "moncommerce-backend",
   "version": "1.0.0",
-  "description": "API backend du CRM de vente mobile MonCommerce",
+  "description": "API backend du CRM de vente mobile Ivoire Shop",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

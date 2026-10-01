@@ -16,7 +16,7 @@ import {
 import { lignesTicket, telechargerTicketPdf, urlTicketPdf, pdfIntegrable, telInternational, genererQr, cheminQr, lienTicket } from "../partage/ticket.js";
 
 /* =====================================================================
-   MonCommerce — administration de boutique (style Shopify)
+   Ivoire Shop — administration de boutique (style Shopify)
    ===================================================================== */
 
 /* ---------- Constantes métier ---------- */
@@ -1209,7 +1209,7 @@ function Topbar({ onMenu }) {
   return (
     <header className="topbar">
       <button className="topbar-icon only-mobile" onClick={onMenu} aria-label="Ouvrir le menu"><Menu size={20} /></button>
-      <a className="brand" href="#/accueil"><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span><span className="brand-name">MonCommerce</span></a>
+      <a className="brand" href="#/accueil"><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span><span className="brand-name">Ivoire Shop</span></a>
       <button className="topbar-search" onClick={openCmdk}><Search size={16} /><span>Rechercher</span><kbd>{isMac ? "⌘ K" : "Ctrl K"}</kbd></button>
       <div className="topbar-right">
         <button className="topbar-icon only-mobile" onClick={openCmdk} aria-label="Rechercher"><Search size={19} /></button>
@@ -1266,7 +1266,7 @@ function SidebarNav({ onNavigate }) {
       })}
       <div className="nav-spacer" />
       <a href="#/parametres" className={cx("nav-item", route.page === "parametres" && "active")} onClick={onNavigate}><Settings size={18} /><span>Paramètres</span></a>
-      <div className="nav-foot">MonCommerce · v6.0</div>
+      <div className="nav-foot">Ivoire Shop · v6.0</div>
     </nav>
   );
 }
@@ -4178,7 +4178,7 @@ function PageParametres() {
   };
   const fileRef = useRef(null);
   const exporter = () => {
-    downloadFile(`moncommerce-sauvegarde-${isoDate(new Date())}.json`, JSON.stringify(data, null, 2), "application/json");
+    downloadFile(`ivoire-shop-sauvegarde-${isoDate(new Date())}.json`, JSON.stringify(data, null, 2), "application/json");
     toast({ title: "Sauvegarde téléchargée" });
   };
   const importer = (e) => {
@@ -4193,7 +4193,7 @@ function PageParametres() {
         if (!(await confirm({ title: "Restaurer cette sauvegarde ?", message: `Vos données actuelles seront remplacées par celles du fichier « ${file.name} » (${parsed.clients.length} clients, ${parsed.ventes.length} ventes).`, confirmLabel: "Restaurer" }))) return;
         if (await remplacerTout(migrate(parsed))) toast({ title: "Données restaurées" });
       } catch {
-        toast({ title: "Fichier invalide", desc: "Choisissez une sauvegarde MonCommerce (.json).", tone: "critical" });
+        toast({ title: "Fichier invalide", desc: "Choisissez une sauvegarde Ivoire Shop (.json).", tone: "critical" });
       }
     };
     reader.readAsText(file);
@@ -4304,15 +4304,28 @@ function AuthScreen({ onSuccess, mode }) {
   const [erreur, setErreur] = useState("");
   const [errKey, setErrKey] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [comptesTest, setComptesTest] = useState([]);
 
   useEffect(() => {
     if (!enLigne) return;
-    apiFetch("GET", "/api/auth/etat").then((r) => setCodeRequis(!!r.code_invitation)).catch(() => {});
+    apiFetch("GET", "/api/auth/etat").then((r) => { setCodeRequis(!!r.code_invitation); setComptesTest(r.comptes_test || []); }).catch(() => {});
   }, []);
 
   const fail = (m) => { setErreur(m); setErrKey((k) => k + 1); };
   const inscription = etape === "inscription";
   const changer = (e) => { setEtape(e); setErreur(""); };
+
+  // Compte de démonstration : connexion directe
+  const entrer = async (c) => {
+    setErreur(""); setBusy(true);
+    try {
+      const r = await apiFetch("POST", "/api/auth/connexion", { telephone: c.telephone, mot_de_passe: c.mot_de_passe });
+      const a = { tel: c.telephone, jeton: r.jeton, utilisateur: r.utilisateur, boutique: r.boutique, connecteLe: new Date().toISOString() };
+      writeJson(AUTH_KEY, a);
+      if (location.search) history.replaceState(null, "", location.pathname + location.hash);
+      onSuccess(a);
+    } catch (err) { setBusy(false); fail(err.message); }
+  };
 
   const valider = async (e) => {
     e.preventDefault();
@@ -4350,7 +4363,7 @@ function AuthScreen({ onSuccess, mode }) {
   return (
     <div className="auth">
       <div className="auth-hero">
-        <a className="brand" style={{ width: "auto" }} href="/"><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span>MonCommerce</a>
+        <a className="brand" style={{ width: "auto" }} href="/"><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span>Ivoire Shop</a>
         <div>
           <h1>Votre espace, <em>vos règles.</em></h1>
           <p>Chaque administrateur dispose de son propre espace : ses produits, ses stocks, ses clients, ses finances et ses vendeurs. Les produits publiés apparaissent sur la page d'accueil de la plateforme.</p>
@@ -4370,7 +4383,7 @@ function AuthScreen({ onSuccess, mode }) {
       <div className="auth-side">
         <div className="card auth-card">
           <div className="card-body">
-            <div className="auth-logo"><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span>MonCommerce</div>
+            <div className="auth-logo"><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span>Ivoire Shop</div>
             <form onSubmit={valider} className="stack" key={etape} style={{ animation: "fadeUp .35s var(--ease-out)" }}>
               {inscription ? (
                 <>
@@ -4399,6 +4412,18 @@ function AuthScreen({ onSuccess, mode }) {
               {enLigne && (inscription
                 ? <p className="subtle" style={{ textAlign: "center" }}>Déjà un compte ? <button type="button" className="link" onClick={() => changer("connexion")}>Se connecter</button></p>
                 : <p className="subtle" style={{ textAlign: "center" }}>{espace === "vendeur" ? "Vous vendez pour votre propre compte ? " : "Pas encore d'espace ? "}<button type="button" className="link" onClick={() => changer("inscription")}>Créer mon espace administrateur</button></p>)}
+              {enLigne && !inscription && comptesTest.length > 0 && (
+                <div className="comptes-test">
+                  <div className="label">Comptes de test — entrer en un clic</div>
+                  {[...comptesTest].sort((a, b) => (a.role === espace ? -1 : 0) - (b.role === espace ? -1 : 0)).map((c) => (
+                    <button type="button" key={c.telephone} className="compte-test" disabled={busy} onClick={() => entrer(c)}>
+                      <span className={cx("todo-icon", c.role === "admin" ? "tint-4" : "tint-0")}>{c.role === "admin" ? <ShieldCheck size={15} /> : <User size={15} />}</span>
+                      <span className="grow"><b>{c.role === "admin" ? "Administrateur" : "Vendeur"} · {c.boutique}</b><small>{c.nom.replace(/ \(.*\)$/, "")} · {c.telephone}</small></span>
+                      <ChevronRight size={15} />
+                    </button>
+                  ))}
+                </div>
+              )}
               {enLigne && <p className="subtle" style={{ textAlign: "center" }}><a className="link" href="/">← Retour à la page d'accueil</a></p>}
               {!enLigne && <div className="banner banner-warning"><AlertTriangle size={16} /><div>Mode démo hors ligne : les données restent dans ce navigateur.</div></div>}
             </form>
@@ -4467,7 +4492,7 @@ function Splash({ texte }) {
   return (
     <div className="splash">
       <span className="brand-mark splash-mark"><ShoppingBag size={22} strokeWidth={2.4} /></span>
-      <div className="strong">MonCommerce</div>
+      <div className="strong">Ivoire Shop</div>
       <div className="row subtle"><span className="spinner" style={{ width: 14, height: 14 }} />{texte}</div>
     </div>
   );
@@ -4481,7 +4506,7 @@ function ServeurIntrouvable({ onRetry, onDemo }) {
         <div className="card-body stack">
           <div className="row" style={{ gap: 12 }}>
             <span className="todo-icon tint-3" style={{ width: 44, height: 44, borderRadius: 12 }}><AlertTriangle size={22} /></span>
-            <div><h2 style={{ fontSize: 18, fontWeight: 700 }}>Serveur introuvable</h2><p className="muted">L'API MonCommerce ne répond pas.</p></div>
+            <div><h2 style={{ fontSize: 18, fontWeight: 700 }}>Serveur introuvable</h2><p className="muted">L'API Ivoire Shop ne répond pas.</p></div>
           </div>
           <p className="muted" style={{ fontSize: 13.5 }}>
             Démarrez le serveur depuis le dossier <b>backend</b> avec <code>npm start</code>, puis ouvrez <b>http://localhost:4000</b>.
