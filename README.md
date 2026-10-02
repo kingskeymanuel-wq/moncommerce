@@ -48,11 +48,13 @@ automatiquement : elle devient le premier espace, sans perte de données.
 
 ### Données de test
 
-Quand la plateforme est vide, **trois boutiques de beauté** sont créées au
-démarrage : « Belle Ivoire Cosmétiques » (maquillage, parfums, manucure-pédicure),
-« Éclat Karité » (soins naturels et produits capillaires) et « Reine des Mèches »
-(perruques, tissages, mèches à tresser). Soit 3 administrateurs, 4 vendeurs,
-33 produits avec photos, des clients et quelques ventes. L'écran **Mon espace**
+Quand la plateforme est vide, **quatre boutiques de test** sont créées au
+démarrage : « Petit Chic Abidjan » (vêtements pour enfants : tenues chic, pyjamas,
+chaussettes, layette — mise en avant, ses produits apparaissent en premier sur la
+page d'accueil), « Belle Ivoire Cosmétiques » (maquillage, parfums,
+manucure-pédicure), « Éclat Karité » (soins naturels et produits capillaires) et
+« Reine des Mèches » (perruques, tissages, mèches à tresser). Soit
+4 administrateurs, 5 vendeurs, 49 produits avec photos, des clients et quelques ventes. L'écran **Mon espace**
 propose alors ces comptes de test : un clic suffit pour entrer. Tout est défini
 dans `backend/db/donnees-test.js`.
 

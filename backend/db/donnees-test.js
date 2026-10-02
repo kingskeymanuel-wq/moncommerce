@@ -1,8 +1,8 @@
 /**
- * Données de test — boutiques de beauté (maquillage, ongles, soins, produits
- * capillaires, mèches et perruques).
+ * Données de test — une boutique de vêtements pour enfants (mise en avant) et
+ * trois boutiques de beauté (maquillage, ongles, soins, capillaire, mèches).
  *
- * Quand la plateforme est vide (aucun espace), trois espaces de démonstration
+ * Quand la plateforme est vide (aucun espace), quatre espaces de démonstration
  * sont créés au démarrage : administrateurs, vendeurs, produits, clients et
  * quelques ventes. L'écran « Mon espace » propose alors ces comptes de test.
  *
@@ -24,6 +24,41 @@ const jours = (n, heure = 10) => { const d = new Date(Date.now() - n * 864e5); d
 const photo = (id) => `https://images.unsplash.com/photo-${id}?w=800&h=800&fit=crop&q=75&auto=format`;
 
 const ESPACES = [
+  {
+    // Boutique mise en avant : ses produits sont les plus récents, donc affichés en premier sur la page d'accueil
+    priorite: true,
+    boutique: "Petit Chic Abidjan",
+    reglages: { slogan: "La mode chic et confortable des enfants, de la naissance à 12 ans", adresse: "Riviera Palmeraie, Abidjan", zone_livraison: "Abidjan et environs, 24 à 48 h", frais_livraison: "1500", livraison_gratuite_des: "25000", message: "Merci ! À bientôt chez Petit Chic Abidjan." },
+    admin: { nom: "Clarisse Yapi (admin test)", telephone: "0100000004" },
+    vendeurs: [{ nom: "Ismaël Koné (vendeur test)", telephone: "0100000041" }],
+    produits: [
+      { nom: "Ensemble chic garçon — nœud papillon et bretelles", image: "1503327151497-be3b97ef0d42", emoji: "🎀", teinte: 4, prix: 14500, cout: 8500, stock: 12, sku: "PC-401", promo: 12000, description: "La tenue des grandes occasions : mariage, baptême, fête de fin d'année. Du 2 au 10 ans.", contenu: ["Chemise blanche", "Pantalon habillé", "Bretelles réglables", "Nœud papillon"] },
+      { nom: "Gilet chic et bermuda garçon", image: "1519238263530-99bdd11df2ea", emoji: "🧥", teinte: 5, prix: 18000, cout: 11000, stock: 8, sku: "PC-402", description: "Gilet marine à écusson, bermuda bleu et nœud papillon. Élégant et confortable, du 3 au 12 ans.", contenu: ["Gilet à écusson", "Bermuda bleu", "Chemise", "Nœud papillon"] },
+      { nom: "Robe de cérémonie en dentelle", image: "1544586947-3e09d1a036f1", emoji: "👗", teinte: 1, prix: 16500, cout: 9500, stock: 9, sku: "PC-403", description: "Robe à dentelle brodée et ceinture satinée, doublée coton. Du 2 au 10 ans." },
+      { nom: "Robe rose à col claudine", image: "1735417117978-e549663de484", emoji: "🌸", teinte: 3, prix: 9500, cout: 5200, stock: 15, sku: "PC-404", description: "Robe manches longues en coton doux, col claudine et volants. Du 1 au 6 ans." },
+      { nom: "Ensemble robe et ballerines", image: "1735417174537-7e7abbf1dc35", emoji: "🩰", teinte: 3, prix: 13500, cout: 7800, stock: 7, sku: "PC-405", promo: 11500, description: "La robe à pois et sa paire de ballerines assorties, prêtes à offrir.", contenu: ["Robe à pois", "Ballerines beiges"] },
+      { nom: "Jupe tutu de fête", image: "1624623327085-9bfb64382f9a", emoji: "🧡", teinte: 2, prix: 7500, cout: 3800, stock: 14, sku: "PC-406", description: "Tutu en tulle volumineux, taille élastique. Anniversaires et spectacles, du 2 au 8 ans." },
+      { nom: "Pyjama enfant en coton imprimé", image: "1634188157846-c6e3bdf99420", emoji: "🌙", teinte: 6, prix: 6500, cout: 3400, stock: 24, sku: "PC-407", description: "Pyjama deux pièces à motifs, 100 % coton, doux pour la peau. Du 2 au 10 ans.", contenu: ["Haut manches longues", "Pantalon à taille élastique"] },
+      { nom: "Pyjama deux pièces garçon", image: "1585628481991-ba29df510208", emoji: "😴", teinte: 5, prix: 6000, cout: 3100, stock: 20, sku: "PC-408", description: "Ensemble de nuit léger et respirant, idéal pour les nuits chaudes. Du 3 au 12 ans." },
+      { nom: "Chaussettes enfant — lot de 3 paires", image: "1615486364462-ef6363adbc18", emoji: "🧦", teinte: 2, prix: 2500, cout: 1100, stock: 60, sku: "PC-409", description: "Trois paires unies en coton épais : gris, violet et jaune. Pointures 23 à 34.", contenu: ["1 paire grise", "1 paire violette", "1 paire jaune"] },
+      { nom: "Chaussettes rayées — lot de 5 paires", image: "1632944968588-3ec2870641ce", emoji: "🧦", teinte: 3, prix: 3500, cout: 1600, stock: 45, sku: "PC-410", description: "Cinq paires à rayures et motifs, bien chaudes. Pointures 19 à 30." },
+      { nom: "Chaussettes fantaisie", image: "1566563634870-d566ab58a4df", emoji: "🍌", teinte: 5, prix: 3000, cout: 1300, stock: 3, seuil: 6, sku: "PC-411", description: "Motifs rigolos qui donnent envie de s'habiller tout seul. Lot de 3 paires." },
+      { nom: "Body bébé coton blanc — lot de 3", image: "1622290291165-d341f1938b8a", emoji: "👶", teinte: 0, prix: 5500, cout: 2700, stock: 30, sku: "PC-412", description: "Bodies manches courtes à pressions, coton tout doux. De la naissance à 24 mois." },
+      { nom: "Chaussons bébé tricotés", image: "1602685365252-c13f549f1f5f", emoji: "🧶", teinte: 6, prix: 3500, cout: 1500, stock: 26, sku: "PC-413", description: "Chaussons en maille douce, tricotés main. De 0 à 12 mois." },
+      { nom: "Layette bébé — lot de 5 pièces", image: "1766918780914-e19d9de76d85", emoji: "🍼", teinte: 4, prix: 12000, cout: 6800, stock: 11, sku: "PC-414", description: "Le trousseau des premiers mois, aux couleurs tendres. Idéal en cadeau de naissance.", contenu: ["2 bodies", "1 gilet", "1 pantalon", "1 barboteuse"] },
+      { nom: "Ensemble jean enfant", image: "1556905055-8f358a7a47b2", emoji: "👖", teinte: 5, prix: 11000, cout: 6200, stock: 13, sku: "PC-415", description: "Veste et pantalon en jean souple, pour l'école comme pour les sorties. Du 2 au 10 ans." },
+      { nom: "Baskets bébé à scratch", image: "1678192568478-9488ee55def6", emoji: "👟", teinte: 4, prix: 8500, cout: 4800, stock: 10, sku: "PC-416", description: "Semelle souple pour les premiers pas, fermeture à scratch. Pointures 18 à 24." },
+    ],
+    clients: [
+      { nom: "Marie-Laure Kouadio", telephone: "0500000401", ville: "Riviera", consentement: 1, statut: "VIP" },
+      { nom: "Fatoumata Cissé", telephone: "0500000402", ville: "Cocody", consentement: 1 },
+      { nom: "Jean-Marc Aké", telephone: "0500000403", ville: "Bingerville", consentement: 0 },
+    ],
+    ventes: [
+      [9, 0, 0, 1, 1, { mode: "Orange Money" }], [7, 1, 8, 3, 1], [6, 2, 6, 2, 0], [4, 0, 2, 1, 1, { mode: "Wave" }], [3, 1, 11, 1, 1],
+      [2, 2, 9, 2, 1], [1, 0, 3, 1, 1, { enLigne: true, statut: "confirmee" }], [0, 1, 6, 1, null, { enLigne: true, statut: "en_attente" }],
+    ],
+  },
   {
     boutique: "Belle Ivoire Cosmétiques",
     reglages: { slogan: "Maquillage, parfums et ongles pour sublimer votre beauté", adresse: "Cocody Angré, Abidjan", zone_livraison: "Abidjan et environs, 24 à 48 h", frais_livraison: "1500", livraison_gratuite_des: "30000", message: "Merci pour votre achat et à bientôt chez Belle Ivoire !" },
@@ -120,7 +155,8 @@ function remplir(e, utilisateurs) {
       `INSERT INTO packs (id, nom, description, contenu, prix, cout, stock, seuil_alerte, sku, emoji, image, teinte, actif, prix_promo, promo_fin, cree_le)
        VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
     ).run(id, p.nom, p.description || "", (p.contenu || []).join("\n") || null, p.prix, p.cout ?? null, p.seuil ?? 5, p.sku, p.emoji, p.image ? photo(p.image) : null, p.teinte ?? 0,
-      p.promo ?? null, p.promo ? new Date(Date.now() + 10 * 864e5).toISOString() : null, jours(20 - i));
+      p.promo ?? null, p.promo ? new Date(Date.now() + 10 * 864e5).toISOString() : null,
+      e.priorite ? new Date(Date.now() - i * 60000).toISOString() : jours(20 - i));
     mouvement(id, p.stock, "stock_initial", { auteurId: utilisateurs[0].id });
     return { id, ...p };
   });
@@ -164,7 +200,7 @@ function installer({ creerEspace, creerUtilisateur, ecrireBoutique }) {
     });
   }
   db.reglages.ecrire("donnees_test", "1");
-  console.log(`   Données de test installées : ${ESPACES.length} boutiques de beauté (désactiver : DONNEES_TEST=0)`);
+  console.log(`   Données de test installées : ${ESPACES.length} boutiques de test (désactiver : DONNEES_TEST=0)`);
 }
 
 /** Comptes de test encore présents — proposés sur l'écran de connexion. */
