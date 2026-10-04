@@ -36,7 +36,10 @@ router.get("/", (req, res) => {
       .filter((u) => admin || u.id === moi).map((u) => ({ ...u, cree_le: versIso(u.cree_le) })),
     clients: db.prepare("SELECT * FROM clients WHERE supprime = 0 ORDER BY cree_le").all().map((c) => ({ ...c, cree_le: versIso(c.cree_le) })),
     // Les vendeurs ne voient ni les coûts d'achat ni les dépenses de la boutique
-    packs: db.prepare("SELECT * FROM packs WHERE supprime = 0 ORDER BY cree_le").all().map((p) => ({ ...p, cout: admin ? p.cout : null, cree_le: versIso(p.cree_le) })),
+    packs: db.prepare("SELECT * FROM packs WHERE supprime = 0 ORDER BY cree_le").all().map((p) => (admin ? { ...p, cree_le: versIso(p.cree_le) }
+      // Vendeur : ni coût d'achat, ni quantité en stock (seulement disponible ou en rupture), ni seuil d'alerte
+      : { ...p, cout: null, stock: p.stock > 0 ? 9999 : 0, seuil_alerte: null, cree_le: versIso(p.cree_le) })),
+    depenses: db.prepare("SELECT d.*, u.nom AS auteur FROM depenses d LEFT JOIN utilisateurs u ON u.id = d.auteur_id ORDER BY d.date_depense DESC, d.cree_le DESC").all().filter((d) => admin || d.auteur_id === moi),
     ventes: ventes.map((v) => ({ ...v, date_vente: versIso(v.date_vente), paye_le: versIso(v.paye_le) })),
     commandes: commandes.map((c) => ({ ...c, maj_le: versIso(c.maj_le) })),
     evenements: db

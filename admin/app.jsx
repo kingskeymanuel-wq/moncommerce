@@ -388,6 +388,7 @@ function depuisServeur(p) {
       };
     }),
     investissements: p.investissements.map((i) => ({ id: i.id, libelle: i.libelle, categorie: i.categorie, montant: i.montant, date: String(i.date_invest).slice(0, 10) })),
+    depenses: (p.depenses || []).map((x) => ({ id: x.id, libelle: x.libelle, categorie: x.categorie, montant: x.montant, date: String(x.date_depense).slice(0, 10), note: x.note || "", auteurId: x.auteur_id, auteur: x.auteur || "", creeLe: x.cree_le })),
     boutique: { ...boutiqueParDefaut(), ...(p.boutique || {}) },
   };
 }
@@ -1192,9 +1193,10 @@ const NAV = [
   { key: "accueil", label: "Accueil", icon: Home },
   { key: "commandes", label: "Commandes", icon: ShoppingCart, badge: (d) => d.commandes.filter((c) => c.statut === "en_attente").length },
   { key: "livraisons", label: "Livraisons", icon: Truck, badge: (d) => d.commandes.filter((c) => c.livraison && !["livree", "annulee"].includes(c.statut)).length },
-  { key: "produits", label: "Produits", icon: Tag },
+  { key: "produits", label: "Produits", icon: Tag, admin: true },
   { key: "stocks", label: "Stocks", icon: Boxes, admin: true, badge: (d) => d.packs.filter((p) => p.actif !== false && p.stock <= seuilDe(p)).length },
-  { key: "clients", label: "Clients", icon: Users },
+  { key: "clients", label: "Clients", icon: Users, admin: true },
+  { key: "depenses", label: "Dépenses", icon: Wallet },
   { key: "ventes", label: "Ventes", icon: Receipt },
   { key: "tickets", label: "Tickets de caisse", icon: FileText, badge: (d) => d.commandes.filter((c) => c.statut !== "annulee" && !c.ticketRemisLe).length },
   { key: "vendeurs", label: "Vendeurs", icon: UserCheck, admin: true },
@@ -1203,6 +1205,9 @@ const NAV = [
 ];
 /* Pages visibles selon le rôle (le vendeur n'a ni stocks, ni marketing, ni finances) */
 const navPour = (estAdmin) => NAV.filter((n) => estAdmin || !n.admin);
+
+/* Vendeur : le serveur ne transmet pas les quantités en stock (9999 = disponible, 0 = rupture) */
+const stockCache = (p) => p?.stock >= 9999;
 
 function useNotifications(data) {
   return useMemo(() => {
@@ -1223,7 +1228,7 @@ function useNotifications(data) {
 
 function Topbar({ onMenu }) {
   const { data, settings, openCmdk, go, logout, cycleTheme, effectiveTheme, auth, estAdmin } = useApp();
-  const notifs = useNotifications(data);
+  const notifs = useNotifications(data).filter((n) => estAdmin || !["produits", "clients"].includes(n.go[0]));
   const [nOpen, setNOpen] = useState(false);
   const [uOpen, setUOpen] = useState(false);
   const closeN = useCallback(() => setNOpen(false), []);
@@ -1296,7 +1301,7 @@ function SidebarNav({ onNavigate }) {
 }
 
 function BottomNav({ onMenu }) {
-  const { route, data, openSale } = useApp();
+  const { route, data, openSale, estAdmin } = useApp();
   const badge = data.commandes.filter((c) => c.statut === "en_attente").length;
   const item = (key, label, Icon, b) => (
     <a href={"#/" + key} className={cx("bn-item", route.page === key && "active")}>
@@ -1308,7 +1313,7 @@ function BottomNav({ onMenu }) {
       {item("accueil", "Accueil", Home)}
       {item("commandes", "Commandes", ShoppingCart, badge)}
       <div className="bn-fab-wrap"><button className="bn-fab" onClick={() => openSale()} aria-label="Nouvelle vente"><Plus size={24} strokeWidth={2.5} /></button></div>
-      {item("clients", "Clients", Users)}
+      {estAdmin ? item("clients", "Clients", Users) : item("depenses", "Dépenses", Wallet)}
       <button className="bn-item" onClick={onMenu}><Menu size={21} />Menu</button>
     </nav>
   );
@@ -1343,7 +1348,7 @@ function CommandPalette({ open, onClose }) {
       const cls = data.clients.filter((c) => match(c.nom + " " + c.tel + " " + c.ville)).slice(0, 5)
         .map((c) => ({ id: "cl-" + c.id, label: c.nom, sub: c.tel + (c.ville ? " · " + c.ville : ""), icon: User, run: () => go("clients", c.id) }));
       const pks = data.packs.filter((p) => match(p.nom + " " + (p.sku || ""))).slice(0, 5)
-        .map((p) => ({ id: "pk-" + p.id, label: p.nom, sub: `${fmt(p.prix)} · ${p.stock} en stock`, emoji: p.emoji, run: () => go("produits", p.id) }));
+        .map((p) => ({ id: "pk-" + p.id, label: p.nom, sub: stockCache(p) ? fmt(p.prix) : `${fmt(p.prix)} · ${p.stock} en stock`, emoji: p.emoji, run: () => go("produits", p.id) }));
       if (cls.length) g.push({ title: "Clients", items: cls });
       if (cmds.length) g.push({ title: "Commandes", items: cmds });
       if (pks.length) g.push({ title: "Produits", items: pks });
@@ -1881,7 +1886,7 @@ function SaleModal({ open, preset, onClose }) {
                     <span className="pt-price">{fmt(prixEffectif(p))}</span>
                     {promoActive(p) && <span className="prix-barre">{fmt(p.prix)}</span>}
                   </span>
-                  <span className="subtle">{p.stock <= 0 ? "Rupture de stock" : `${p.stock} en stock${(p.pieces || 1) > 1 ? ` · lot de ${p.pieces}` : ""}`}</span>
+                  <span className="subtle">{p.stock <= 0 ? "Rupture de stock" : `${stockCache(p) ? "Disponible" : p.stock + " en stock"}${(p.pieces || 1) > 1 ? ` · lot de ${p.pieces}` : ""}`}</span>
                 </button>
               ))}
               {packs.length === 0 && <div className="subtle">Aucun article trouvé.</div>}
@@ -2563,46 +2568,122 @@ function PageCommandes({ route }) {
 /* =====================================================================
    PAGE : Commande (détail)
    ===================================================================== */
+/* =====================================================================
+   PAGE : Dépenses (saisies par le vendeur ou l'administrateur)
+   ===================================================================== */
+const CATEGORIES_DEPENSE = ["Transport", "Livraison", "Emballage", "Communication", "Repas", "Autre"];
+function PageDepenses() {
+  const { data, mode, toast, confirm, rafraichir, estAdmin, auth } = useApp();
+  const vide = { libelle: "", categorie: "Transport", montant: "", date: isoDate(new Date()), note: "" };
+  const [f, setF] = useState(vide);
+  const [ouvert, setOuvert] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const liste = data.depenses || [];
+  const mois = isoDate(new Date()).slice(0, 7), jour = isoDate(new Date());
+  const somme = (l) => l.reduce((s, d) => s + d.montant, 0);
+  if (mode !== "api") return <><PageHeader title="Dépenses" /><Card><EmptyState icon={Wallet} title="Disponible avec le serveur" /></Card></>;
+  const enregistrer = async () => {
+    if (f.libelle.trim().length < 2) return toast({ title: "Indiquez l'objet de la dépense", tone: "critical" });
+    if (!(Number(f.montant) > 0)) return toast({ title: "Indiquez le montant", tone: "critical" });
+    setBusy(true);
+    try {
+      await apiFetch("POST", "/api/depenses", { ...f, montant: Number(f.montant) });
+      toast({ title: "Dépense enregistrée", desc: `${f.libelle.trim()} · ${fmt(Number(f.montant))}` });
+      setOuvert(false); setF(vide); await rafraichir();
+    } catch (e) { toast({ title: "Enregistrement impossible", desc: e.message, tone: "critical" }); }
+    finally { setBusy(false); }
+  };
+  const supprimer = async (d) => {
+    if (!(await confirm({ title: `Supprimer « ${d.libelle} » ?`, message: `Dépense de ${fmt(d.montant)}.`, confirmLabel: "Supprimer", tone: "critical" }))) return;
+    try { await apiFetch("DELETE", "/api/depenses/" + d.id); await rafraichir(); } catch (e) { toast({ title: "Suppression impossible", desc: e.message, tone: "critical" }); }
+  };
+  return (
+    <>
+      <PageHeader title="Dépenses" meta={estAdmin ? "Dépenses saisies par vous et par vos vendeurs" : "Vos dépenses : transport, livraison, emballage…"}
+        actions={<Btn variant="primary" icon={Plus} onClick={() => { setF(vide); setOuvert(true); }}>Saisir une dépense</Btn>} />
+      <div className="kpi-grid kpi-3 stagger">
+        {[["Aujourd'hui", somme(liste.filter((d) => d.date === jour))], ["Ce mois-ci", somme(liste.filter((d) => d.date.startsWith(mois)))], ["Total", somme(liste)]].map(([l, v], i) => (
+          <div className="card kpi" key={l} style={{ "--i": i }}><div className="kpi-label"><span className="kpi-dot tint-3"><Wallet size={13} /></span>{l}</div><div className="kpi-value"><CountUp value={v} format={fmt} /></div></div>
+        ))}
+      </div>
+      <Card title="Dépenses enregistrées" padded={false}>
+        <div style={{ height: 12 }} />
+        {liste.length === 0 ? <EmptyState icon={Wallet} title="Aucune dépense" action={<Btn variant="primary" icon={Plus} onClick={() => setOuvert(true)}>Saisir une dépense</Btn>}>Notez ici vos frais : transport, livraison, emballage, crédit de communication…</EmptyState> : (
+          <div className="table-scroll"><table className="table">
+            <thead><tr><th>Date</th><th>Objet</th><th className="hide-sm">Catégorie</th>{estAdmin && <th className="hide-sm">Saisie par</th>}<th className="right">Montant</th><th /></tr></thead>
+            <tbody>{liste.map((d, i) => (
+              <tr key={d.id} style={{ "--i": Math.min(i, 20) }}>
+                <td>{fmtDateCourt(d.date)}</td>
+                <td className="wrap"><div className="cell-main">{d.libelle}</div>{d.note && <div className="cell-sub">{d.note}</div>}</td>
+                <td className="hide-sm"><Badge>{d.categorie}</Badge></td>
+                {estAdmin && <td className="hide-sm muted">{d.auteur || "—"}</td>}
+                <td className="right num strong">{fmt(d.montant)}</td>
+                <td className="right">{(estAdmin || (d.auteurId === auth?.utilisateur?.id && String(d.creeLe).slice(0, 10) === new Date().toISOString().slice(0, 10))) && <button className="icon-btn danger" onClick={() => supprimer(d)} aria-label={`Supprimer ${d.libelle}`}><Trash2 size={15} /></button>}</td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+        )}
+      </Card>
+      <Modal open={ouvert} onClose={() => setOuvert(false)} title="Saisir une dépense"
+        footer={<><Btn onClick={() => setOuvert(false)}>Annuler</Btn><Btn variant="primary" icon={Check} loading={busy} onClick={enregistrer}>Enregistrer</Btn></>}>
+        <div className="stack">
+          <Field label="Objet de la dépense"><Input value={f.libelle} onChange={(e) => setF({ ...f, libelle: e.target.value })} placeholder="Ex : taxi pour livraison à Cocody" autoFocus /></Field>
+          <div className="form-grid">
+            <Field label="Montant"><Input value={f.montant} onChange={(e) => setF({ ...f, montant: e.target.value.replace(/[^\d]/g, "") })} suffix="FCFA" inputMode="numeric" /></Field>
+            <Field label="Date"><Input type="date" value={f.date} max={isoDate(new Date())} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+          </div>
+          <Field label="Catégorie"><div className="chips">{CATEGORIES_DEPENSE.map((c) => <button type="button" key={c} className={cx("chip", f.categorie === c && "on")} onClick={() => setF({ ...f, categorie: c })}>{c}</button>)}</div></Field>
+          <Field label="Note" optional><Input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></Field>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
 /* Retour d'un article après la vente : rétractation (remboursement) ou échange */
 function RetourModal({ open, cmd, onClose, onFait }) {
   const { data, toast, rafraichir } = useApp();
-  const [f, setF] = useState({ ligne: "", qte: 1, motif: "retractation", echange: "", stock: true, note: "" });
+  const [f, setF] = useState({ ligne: "", qte: 1, motif: "retractation", echange: "", stock: true, note: "", tout: false });
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) { setF({ ligne: cmd.lignes[0]?.id || "", qte: 1, motif: "retractation", echange: "", stock: true, note: "" }); setBusy(false); } }, [open]);
+  useEffect(() => { if (open) { setF({ ligne: cmd.lignes[0]?.id || "", qte: 1, motif: "retractation", echange: "", stock: true, note: "", tout: false }); setBusy(false); } }, [open]);
   if (!cmd) return null;
   const ligne = cmd.lignes.find((l) => l.id === f.ligne) || cmd.lignes[0];
   const seule = cmd.lignes.length === 1 && f.qte >= (ligne?.qte || 1);
   const autres = data.packs.filter((p) => p.actif !== false && p.stock > 0);
   const nouveau = data.packs.find((p) => p.id === f.echange);
   const prixNouveau = nouveau ? (promoActive(nouveau) ? nouveau.prixPromo : nouveau.prix) : 0;
-  const diff = ligne ? f.qte * ligne.prixUnitaire - (f.motif === "echange" ? f.qte * prixNouveau : 0) : 0;
+  const complet = f.motif === "retractation" && (f.tout || seule);
+  const diff = complet ? cmd.lignes.reduce((s, l) => s + l.qte * l.prixUnitaire, 0) : ligne ? f.qte * ligne.prixUnitaire - (f.motif === "echange" ? f.qte * prixNouveau : 0) : 0;
   const valider = async () => {
     if (f.motif === "echange" && !f.echange) return toast({ title: "Choisissez l'article donné en échange", tone: "critical" });
     setBusy(true);
     try {
-      await apiFetch("POST", `/api/commandes/${cmd.id}/retour`, { vente_id: ligne.id, quantite: f.qte, motif: f.motif, echange_pack_id: f.echange || undefined, remettre_en_stock: f.stock, note: f.note });
+      await apiFetch("POST", `/api/commandes/${cmd.id}/retour`, complet ? { tout: true, remettre_en_stock: f.stock, note: f.note } : { vente_id: ligne.id, quantite: f.qte, motif: f.motif, echange_pack_id: f.echange || undefined, remettre_en_stock: f.stock, note: f.note });
       toast({ title: f.motif === "echange" ? "Échange enregistré" : "Retour enregistré", desc: diff > 0 ? `${fmt(diff)} à rembourser au client` : diff < 0 ? `${fmt(-diff)} de complément à encaisser` : "Sans différence de prix" });
       await rafraichir(); onFait?.(); onClose();
     } catch (e) { toast({ title: "Retour impossible", desc: e.message, tone: "critical" }); setBusy(false); }
   };
   return (
     <Modal open={open} onClose={onClose} title={`Retour d'article — ${cmd.numero}`}
-      footer={<><Btn onClick={onClose}>Fermer</Btn><Btn variant="primary" icon={RotateCcw} loading={busy} disabled={f.motif === "retractation" && seule} onClick={valider}>{f.motif === "echange" ? "Enregistrer l'échange" : "Enregistrer le retour"}</Btn></>}>
+      footer={<><Btn onClick={onClose}>Fermer</Btn><Btn variant="primary" icon={RotateCcw} loading={busy} onClick={valider}>{f.motif === "echange" ? "Enregistrer l'échange" : "Enregistrer le retour"}</Btn></>}>
       <div className="stack">
         <Field label="Motif"><Segmented full value={f.motif} onChange={(motif) => setF({ ...f, motif })} options={[{ value: "retractation", label: "Rétractation" }, { value: "echange", label: "Échange" }]} /></Field>
+        {f.motif === "retractation" && cmd.lignes.length > 0 && <Checkbox checked={f.tout} onChange={() => setF({ ...f, tout: !f.tout })} label={`Le client rend tous les articles de la commande (${cmd.lignes.reduce((s, l) => s + l.qte, 0)})`} />}
+        {!(f.motif === "retractation" && f.tout) && <>
         <Field label="Article rendu par le client">
           <Select value={ligne?.id || ""} onChange={(e) => setF({ ...f, ligne: e.target.value, qte: 1 })}>{cmd.lignes.map((l) => <option key={l.id} value={l.id}>{l.pack?.nom || "Article"} — {l.qte} × {fmt(l.prixUnitaire)}</option>)}</Select>
         </Field>
         <Field label="Quantité rendue" help={ligne ? `${ligne.qte} acheté${ligne.qte > 1 ? "s" : ""} sur cette commande.` : null}><Stepper value={f.qte} onChange={(qte) => setF({ ...f, qte })} min={1} max={ligne?.qte || 1} /></Field>
+        </>}
         {f.motif === "echange" && (
           <Field label="Article donné en échange">
-            <Select value={f.echange} onChange={(e) => setF({ ...f, echange: e.target.value })}><option value="">Choisir un article…</option>{autres.map((p) => <option key={p.id} value={p.id}>{p.nom} — {fmt(promoActive(p) ? p.prixPromo : p.prix)} ({p.stock} en stock)</option>)}</Select>
+            <Select value={f.echange} onChange={(e) => setF({ ...f, echange: e.target.value })}><option value="">Choisir un article…</option>{autres.map((p) => <option key={p.id} value={p.id}>{p.nom} — {fmt(promoActive(p) ? p.prixPromo : p.prix)}{stockCache(p) ? "" : ` (${p.stock} en stock)`}</option>)}</Select>
           </Field>
         )}
         <Checkbox checked={f.stock} onChange={() => setF({ ...f, stock: !f.stock })} label="Remettre l'article rendu en stock (décochez s'il est abîmé)" />
         <Field label="Note" optional><Input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="Ex : taille trop petite" /></Field>
-        {f.motif === "retractation" && seule
-          ? <div className="banner banner-warning"><AlertTriangle size={16} /><div>C'est le seul article de la commande : utilisez plutôt « Annuler la commande ».</div></div>
+        {complet
+          ? <div className="banner banner-info"><Banknote size={16} /><div><b>Retour complet : {fmt(diff)} à rembourser</b> au client. La commande passe en « Annulée »{cmd.statut === "livree" ? ", même après livraison," : ""} et le retour est noté dans la chronologie.</div></div>
           : <div className={cx("banner", diff > 0 ? "banner-info" : diff < 0 ? "banner-warning" : "banner-success")}><Banknote size={16} /><div>{diff > 0 ? <><b>{fmt(diff)} à rembourser</b> au client.</> : diff < 0 ? <><b>{fmt(-diff)} de complément</b> à encaisser.</> : "Aucune différence de prix."} Le total de la commande et le ticket de caisse sont mis à jour.</div></div>}
       </div>
     </Modal>
@@ -3598,7 +3679,7 @@ function PageTickets({ route }) {
                         <td className="right num">{fmtNum(e.lots)}</td>
                         <td className="right num strong">{fmtNum(e.pieces)}</td>
                         <td className="right num hide-sm">{fmt(e.ca)}</td>
-                        <td className="right num">{p ? <>{p.stock}{parLot > 1 && <span className="subtle"> ({fmtNum(p.stock * parLot)} art.)</span>}</> : "—"}</td>
+                        <td className="right num">{p && !stockCache(p) ? <>{p.stock}{parLot > 1 && <span className="subtle"> ({fmtNum(p.stock * parLot)} art.)</span>}</> : "—"}</td>
                       </tr>
                     );
                   })}
@@ -5424,8 +5505,9 @@ function App() {
   let content;
   switch (route.page) {
     case "commandes": content = isDetail ? <PageCommande id={route.id} /> : <PageCommandes route={route} />; break;
-    case "produits": content = <PageProduits route={route} />; break;
-    case "clients": content = isDetail ? <PageClient id={route.id} /> : <PageClients route={route} />; break;
+    case "produits": content = estAdmin ? <PageProduits route={route} /> : <AccesReserve />; break;
+    case "depenses": content = <PageDepenses />; break;
+    case "clients": content = !estAdmin ? <AccesReserve /> : isDetail ? <PageClient id={route.id} /> : <PageClients route={route} />; break;
     case "ventes": content = <PageVentes />; break;
     case "stocks": content = estAdmin ? <PageStocks route={route} /> : <AccesReserve />; break;
     case "marketing": content = estAdmin ? <PageMarketing route={route} /> : <AccesReserve />; break;

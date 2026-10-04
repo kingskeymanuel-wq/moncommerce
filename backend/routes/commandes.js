@@ -259,6 +259,27 @@ router.post("/:id/retour", (req, res) => {
   if (!cmd) return res.status(404).json({ erreur: "Commande introuvable" });
   if (cmd.statut === "annulee") return res.status(400).json({ erreur: "Cette commande est annulée" });
   const lignes = lignesCommande(cmd);
+  // Retour complet (tous les articles rendus, par exemple après la livraison) : la commande passe en « annulée »,
+  // les articles reviennent en stock et le montant est à rembourser.
+  const unique = lignes.length === 1 && lignes[0].id === req.body.vente_id && Math.round(Number(req.body.quantite)) === lignes[0].quantite && req.body.motif !== "echange";
+  if (req.body.tout === true || unique) {
+    if (!lignes.length) return res.status(400).json({ erreur: "Cette commande n'a plus d'article" });
+    const remis = req.body.remettre_en_stock !== false;
+    const remarque = String(req.body.note || "").trim().slice(0, 300) || null;
+    const total = lignes.reduce((s, l) => s + l.quantite * l.prix_unitaire, 0);
+    const nb = lignes.reduce((s, l) => s + l.quantite, 0);
+    db.transaction(() => {
+      for (const l of lignes) {
+        if (remis) mouvement(l.pack_id, +l.quantite, "retour", { reference: cmd.numero, auteurId: req.user?.id, note: remarque });
+        db.prepare("INSERT INTO retours (id, commande_id, pack_id, quantite, motif, montant, echange_pack_id, echange_montant, difference, remis_en_stock, note, auteur_id, cree_le) VALUES (?, ?, ?, ?, 'retractation', ?, NULL, 0, ?, ?, ?, ?, ?)")
+          .run(nanoid(), cmd.id, l.pack_id, l.quantite, l.quantite * l.prix_unitaire, l.quantite * l.prix_unitaire, remis ? 1 : 0, remarque, req.user?.id || null, new Date().toISOString());
+      }
+      db.prepare("UPDATE commandes SET statut = 'annulee', maj_le = ? WHERE id = ?").run(new Date().toISOString(), cmd.id);
+      ajouterEvenement(cmd.id, { type: "statut", statut: "annulee", auteurId: req.user?.id });
+      ajouterEvenement(cmd.id, { type: "note", auteurId: req.user?.id, texte: `Retour complet${cmd.statut === "livree" ? " après livraison" : ""} : ${nb} article(s) rendu(s) — ${Math.round(total).toLocaleString("fr-FR").replace(/[\u202f\u00a0]/g, " ")} FCFA à rembourser au client.${remis ? " Articles remis en stock." : " Articles non remis en stock."}${remarque ? " " + remarque : ""}` });
+    })();
+    return res.status(201).json({ commande: enrichir(lire(cmd.id)), difference: total, complet: true });
+  }
   const ligne = lignes.find((l) => l.id === req.body.vente_id);
   if (!ligne) return res.status(400).json({ erreur: "Choisissez l'article retourné" });
   const q = Math.round(Number(req.body.quantite) || 0);

@@ -24,14 +24,16 @@ router.get("/", (req, res) => {
     )
     .all()
     .reduce((acc, r) => ({ ...acc, [r.pack_id]: r.total_vendu }), {});
-  res.json(packs.map((p) => ({ ...serialiser(p), totalVendu: ventesParPack[p.id] || 0 })));
+  const admin = req.user?.role === "admin";
+  // Un vendeur ne reçoit ni coût, ni quantité en stock, ni volumes vendus
+  res.json(packs.map((p) => (admin ? { ...serialiser(p), totalVendu: ventesParPack[p.id] || 0 } : { ...serialiser(p), cout: null, stock: p.stock > 0 ? 9999 : 0, seuil_alerte: null })));
 });
 
 // GET /api/packs/:id
 router.get("/:id", (req, res) => {
   const pack = lire(req.params.id);
   if (!pack) return res.status(404).json({ erreur: "Pack introuvable" });
-  res.json(serialiser(pack));
+  res.json(req.user?.role === "admin" ? serialiser(pack) : { ...serialiser(pack), cout: null, stock: pack.stock > 0 ? 9999 : 0, seuil_alerte: null });
 });
 
 // Toute modification du catalogue et du stock est réservée aux administrateurs
