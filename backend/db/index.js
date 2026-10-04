@@ -84,6 +84,14 @@ function ouvrirEspace(fichier) {
     CREATE INDEX IF NOT EXISTS idx_tickets_commande ON tickets_journal(commande_id);`);
 
   // v8 : suivi des livraisons — colis à livrer, livreur, date prévue, tentatives
+  // Retours d'articles après la vente (rétractation ou échange)
+  db.exec(`CREATE TABLE IF NOT EXISTS retours (
+    id TEXT PRIMARY KEY, commande_id TEXT NOT NULL, pack_id TEXT NOT NULL, quantite INTEGER NOT NULL,
+    motif TEXT NOT NULL,                 -- retractation | echange
+    montant REAL NOT NULL DEFAULT 0,     -- valeur des articles retournés
+    echange_pack_id TEXT, echange_montant REAL NOT NULL DEFAULT 0,
+    difference REAL NOT NULL DEFAULT 0,  -- > 0 : à rembourser au client ; < 0 : complément à encaisser
+    remis_en_stock INTEGER NOT NULL DEFAULT 1, note TEXT, auteur_id TEXT, cree_le TEXT NOT NULL)`);
   db.exec(`CREATE TABLE IF NOT EXISTS livreurs (
     id TEXT PRIMARY KEY, nom TEXT NOT NULL, telephone TEXT NOT NULL, zone TEXT,
     actif INTEGER NOT NULL DEFAULT 1, supprime INTEGER NOT NULL DEFAULT 0, cree_le TEXT NOT NULL);`);

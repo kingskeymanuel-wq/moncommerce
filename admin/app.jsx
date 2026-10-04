@@ -2563,6 +2563,52 @@ function PageCommandes({ route }) {
 /* =====================================================================
    PAGE : Commande (détail)
    ===================================================================== */
+/* Retour d'un article après la vente : rétractation (remboursement) ou échange */
+function RetourModal({ open, cmd, onClose, onFait }) {
+  const { data, toast, rafraichir } = useApp();
+  const [f, setF] = useState({ ligne: "", qte: 1, motif: "retractation", echange: "", stock: true, note: "" });
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (open) { setF({ ligne: cmd.lignes[0]?.id || "", qte: 1, motif: "retractation", echange: "", stock: true, note: "" }); setBusy(false); } }, [open]);
+  if (!cmd) return null;
+  const ligne = cmd.lignes.find((l) => l.id === f.ligne) || cmd.lignes[0];
+  const seule = cmd.lignes.length === 1 && f.qte >= (ligne?.qte || 1);
+  const autres = data.packs.filter((p) => p.actif !== false && p.stock > 0);
+  const nouveau = data.packs.find((p) => p.id === f.echange);
+  const prixNouveau = nouveau ? (promoActive(nouveau) ? nouveau.prixPromo : nouveau.prix) : 0;
+  const diff = ligne ? f.qte * ligne.prixUnitaire - (f.motif === "echange" ? f.qte * prixNouveau : 0) : 0;
+  const valider = async () => {
+    if (f.motif === "echange" && !f.echange) return toast({ title: "Choisissez l'article donné en échange", tone: "critical" });
+    setBusy(true);
+    try {
+      await apiFetch("POST", `/api/commandes/${cmd.id}/retour`, { vente_id: ligne.id, quantite: f.qte, motif: f.motif, echange_pack_id: f.echange || undefined, remettre_en_stock: f.stock, note: f.note });
+      toast({ title: f.motif === "echange" ? "Échange enregistré" : "Retour enregistré", desc: diff > 0 ? `${fmt(diff)} à rembourser au client` : diff < 0 ? `${fmt(-diff)} de complément à encaisser` : "Sans différence de prix" });
+      await rafraichir(); onFait?.(); onClose();
+    } catch (e) { toast({ title: "Retour impossible", desc: e.message, tone: "critical" }); setBusy(false); }
+  };
+  return (
+    <Modal open={open} onClose={onClose} title={`Retour d'article — ${cmd.numero}`}
+      footer={<><Btn onClick={onClose}>Fermer</Btn><Btn variant="primary" icon={RotateCcw} loading={busy} disabled={f.motif === "retractation" && seule} onClick={valider}>{f.motif === "echange" ? "Enregistrer l'échange" : "Enregistrer le retour"}</Btn></>}>
+      <div className="stack">
+        <Field label="Motif"><Segmented full value={f.motif} onChange={(motif) => setF({ ...f, motif })} options={[{ value: "retractation", label: "Rétractation" }, { value: "echange", label: "Échange" }]} /></Field>
+        <Field label="Article rendu par le client">
+          <Select value={ligne?.id || ""} onChange={(e) => setF({ ...f, ligne: e.target.value, qte: 1 })}>{cmd.lignes.map((l) => <option key={l.id} value={l.id}>{l.pack?.nom || "Article"} — {l.qte} × {fmt(l.prixUnitaire)}</option>)}</Select>
+        </Field>
+        <Field label="Quantité rendue" help={ligne ? `${ligne.qte} acheté${ligne.qte > 1 ? "s" : ""} sur cette commande.` : null}><Stepper value={f.qte} onChange={(qte) => setF({ ...f, qte })} min={1} max={ligne?.qte || 1} /></Field>
+        {f.motif === "echange" && (
+          <Field label="Article donné en échange">
+            <Select value={f.echange} onChange={(e) => setF({ ...f, echange: e.target.value })}><option value="">Choisir un article…</option>{autres.map((p) => <option key={p.id} value={p.id}>{p.nom} — {fmt(promoActive(p) ? p.prixPromo : p.prix)} ({p.stock} en stock)</option>)}</Select>
+          </Field>
+        )}
+        <Checkbox checked={f.stock} onChange={() => setF({ ...f, stock: !f.stock })} label="Remettre l'article rendu en stock (décochez s'il est abîmé)" />
+        <Field label="Note" optional><Input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="Ex : taille trop petite" /></Field>
+        {f.motif === "retractation" && seule
+          ? <div className="banner banner-warning"><AlertTriangle size={16} /><div>C'est le seul article de la commande : utilisez plutôt « Annuler la commande ».</div></div>
+          : <div className={cx("banner", diff > 0 ? "banner-info" : diff < 0 ? "banner-warning" : "banner-success")}><Banknote size={16} /><div>{diff > 0 ? <><b>{fmt(diff)} à rembourser</b> au client.</> : diff < 0 ? <><b>{fmt(-diff)} de complément</b> à encaisser.</> : "Aucune différence de prix."} Le total de la commande et le ticket de caisse sont mis à jour.</div></div>}
+      </div>
+    </Modal>
+  );
+}
+
 function PageCommande({ id }) {
   const { data, update, sync, go, toast, confirm, estAdmin } = useApp();
   const [receipt, setReceipt] = useState(false);
@@ -2571,6 +2617,11 @@ function PageCommande({ id }) {
   const [addrOpen, setAddrOpen] = useState(false);
   const [addr, setAddr] = useState("");
   const [note, setNote] = useState(null);
+  const [retour, setRetour] = useState(false);
+  const [retours, setRetours] = useState([]);
+  const { mode } = useApp();
+  const chargerRetours = useCallback(() => { if (mode === "api") apiFetch("GET", `/api/commandes/${id}/retours`).then(setRetours).catch(() => {}); }, [id, mode]);
+  useEffect(() => { chargerRetours(); }, [chargerRetours]);
   const c = useMemo(() => enrichCommandes(data).find((x) => x.id === id), [data, id]);
 
   if (!c) {
@@ -2616,6 +2667,7 @@ function PageCommande({ id }) {
           <Btn icon={Receipt} onClick={() => setReceipt(true)}>Ticket de caisse</Btn>
           <MoreMenu items={[
             c.statut === "annulee" && { label: "Rétablir la commande", icon: RotateCcw, onClick: () => setStatut("en_attente") },
+            c.statut !== "annulee" && mode === "api" && { label: "Retour ou échange d'article", icon: RotateCcw, onClick: () => setRetour(true) },
             c.statut !== "annulee" && { label: "Annuler la commande", icon: XCircle, onClick: cancel },
             c.statut !== "annulee" && c.statut !== "livree" && { label: c.livraison ? "Passer en retrait sur place" : "Passer en livraison", icon: Truck, onClick: () => { patch(() => ({ livraison: !c.livraison })); sync(["PATCH", `/api/commandes/${c.id}/livraison`, { livraison: !c.livraison }]); } },
             ...(estAdmin ? ["sep", { label: "Supprimer", icon: Trash2, tone: "critical", onClick: remove }] : []),
@@ -2623,6 +2675,7 @@ function PageCommande({ id }) {
         </>}
       />
 
+      <RetourModal open={retour} cmd={c} onClose={() => setRetour(false)} onFait={chargerRetours} />
       <div className="layout-detail">
         <div>
           <Card title={<span className="row"><StatutBadge statut={c.statut} /></span>} actions={next && <Btn variant="primary" icon={next.icon} onClick={() => setStatut(next.statut)}>{next.label}</Btn>}>
@@ -2643,14 +2696,14 @@ function PageCommande({ id }) {
             )}
             <div style={{ marginTop: 16, borderTop: "1px solid var(--divider)" }}>
               {c.lignes.map((l) => (
-                <div key={l.id} className="list-item" style={{ padding: "12px 0 0", borderTop: 0 }}>
+                <div key={l.id} className="list-item ligne-commande" style={{ padding: "12px 0 0", borderTop: 0 }}>
                   <Thumb pack={l.pack} size="lg" />
                   <div className="grow">
                     <div className="strong">{l.pack?.nom || "Produit supprimé"}</div>
                     <div className="subtle">{l.pack?.sku && `SKU : ${l.pack.sku}`}</div>
+                    <div className="num muted">{fmt(l.prixUnitaire)} × {l.qte}</div>
                   </div>
-                  <div className="num muted">{fmt(l.prixUnitaire)} × {l.qte}</div>
-                  <div className="num strong" style={{ minWidth: 110, textAlign: "right" }}>{fmt(l.total)}</div>
+                  <div className="num strong ligne-total">{fmt(l.total)}</div>
                 </div>
               ))}
             </div>
@@ -2686,6 +2739,23 @@ function PageCommande({ id }) {
               )}
             </div>
           </Card>
+
+          {retours.length > 0 && (
+            <Card title="Articles retournés" sub={`${retours.length} retour${retours.length > 1 ? "s" : ""} sur cette commande`}>
+              <div className="stack-sm">
+                {retours.map((r) => (
+                  <div key={r.id} className="retour-ligne">
+                    <span className={cx("todo-icon", r.motif === "echange" ? "tint-4" : "tint-3")}><RotateCcw size={15} /></span>
+                    <div className="grow">
+                      <div className="strong">{r.quantite} × {r.article}{r.motif === "echange" ? <> → {r.echange_article}</> : null}</div>
+                      <div className="subtle">{r.motif === "echange" ? "Échange" : "Rétractation"} · {fmtDateTime(r.cree_le)} · {r.remis_en_stock ? "remis en stock" : "non remis en stock"}{r.note ? ` · ${r.note}` : ""}</div>
+                    </div>
+                    <Badge tone={r.difference > 0 ? "info" : r.difference < 0 ? "warning" : "neutral"}>{r.difference > 0 ? `${fmt(r.difference)} à rembourser` : r.difference < 0 ? `${fmt(-r.difference)} à encaisser` : "Sans différence"}</Badge>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           <Card title="Chronologie">
             <div className="comment-box">

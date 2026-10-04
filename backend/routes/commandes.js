@@ -8,6 +8,9 @@ const { envoyerEmail } = require("../lib/email");
 const { ticketEmail } = require("../lib/ticketEmail");
 const { adminOnly } = require("../middleware/auth");
 const { journaliser, ACTIONS_VENDEUR } = require("../lib/tickets");
+const { nanoid } = require("nanoid");
+const { mouvement } = require("../lib/stock");
+const { prixEffectif } = require("../lib/prix");
 const router = express.Router();
 
 const STATUTS_VALIDES = ["en_attente", "confirmee", "expediee", "livree", "annulee"];
@@ -237,6 +240,71 @@ router.post("/:id/ticket", (req, res) => {
 
 // DELETE /api/commandes/:id — supprime la commande et ses lignes ; le stock est
 // réintégré sauf si la commande était déjà annulée.
+// GET /api/commandes/:id/retours — articles retournés sur cette commande
+router.get("/:id/retours", (req, res) => {
+  const noms = new Map(db.prepare("SELECT id, nom FROM packs").all().map((p) => [p.id, p.nom]));
+  res.json(db.prepare("SELECT * FROM retours WHERE commande_id = ? ORDER BY cree_le DESC").all(req.params.id)
+    .map((r) => ({ ...r, article: noms.get(r.pack_id) || "Article", echange_article: r.echange_pack_id ? noms.get(r.echange_pack_id) || "Article" : null })));
+});
+
+/*
+ * POST /api/commandes/:id/retour — le client rend un article après la vente.
+ * { vente_id, quantite, motif: "retractation" | "echange", echange_pack_id?, remettre_en_stock?, note? }
+ *  - rétractation : l'article sort de la commande, le montant est à rembourser ;
+ *  - échange : l'article est remplacé par un autre, la différence de prix est à rembourser ou à encaisser.
+ * Le total, le ticket de caisse et le stock sont mis à jour ; le retour est tracé dans la chronologie.
+ */
+router.post("/:id/retour", (req, res) => {
+  const cmd = lire(req.params.id);
+  if (!cmd) return res.status(404).json({ erreur: "Commande introuvable" });
+  if (cmd.statut === "annulee") return res.status(400).json({ erreur: "Cette commande est annulée" });
+  const lignes = lignesCommande(cmd);
+  const ligne = lignes.find((l) => l.id === req.body.vente_id);
+  if (!ligne) return res.status(400).json({ erreur: "Choisissez l'article retourné" });
+  const q = Math.round(Number(req.body.quantite) || 0);
+  if (!(q >= 1 && q <= ligne.quantite)) return res.status(400).json({ erreur: `Quantité retournée invalide (1 à ${ligne.quantite})` });
+  const motif = req.body.motif === "echange" ? "echange" : "retractation";
+  if (motif === "retractation" && lignes.length === 1 && q === ligne.quantite) return res.status(400).json({ erreur: "Tous les articles sont retournés : annulez plutôt la commande." });
+  const nouveau = motif === "echange" ? db.prepare("SELECT * FROM packs WHERE id = ? AND supprime = 0").get(String(req.body.echange_pack_id || "")) : null;
+  if (motif === "echange" && !nouveau) return res.status(400).json({ erreur: "Choisissez l'article donné en échange" });
+  if (nouveau && nouveau.stock < q && nouveau.id !== ligne.pack_id) return res.status(400).json({ erreur: `Stock insuffisant pour ${nouveau.nom} (${nouveau.stock} disponible)` });
+  const remettre = req.body.remettre_en_stock !== false;
+  const note = String(req.body.note || "").trim().slice(0, 300) || null;
+  const nomRendu = db.prepare("SELECT nom FROM packs WHERE id = ?").get(ligne.pack_id)?.nom || "Article";
+  const montant = q * ligne.prix_unitaire;
+  const prixNouveau = nouveau ? prixEffectif(nouveau) : 0;
+  const montantEchange = q * prixNouveau;
+  const difference = montant - montantEchange;
+
+  db.transaction(() => {
+    // L'article rendu sort de la commande…
+    if (q === ligne.quantite && nouveau) {
+      db.prepare("UPDATE ventes SET pack_id = ?, prix_unitaire = ? WHERE id = ?").run(nouveau.id, prixNouveau, ligne.id);
+    } else if (q === ligne.quantite) {
+      if (cmd.vente_id === ligne.id) db.prepare("UPDATE commandes SET vente_id = ? WHERE id = ?").run(lignes.find((l) => l.id !== ligne.id).id, cmd.id);
+      db.prepare("DELETE FROM ventes WHERE id = ?").run(ligne.id);
+    } else {
+      db.prepare("UPDATE ventes SET quantite = quantite - ? WHERE id = ?").run(q, ligne.id);
+      if (nouveau) { // … et l'article d'échange y entre, sur une nouvelle ligne
+        const copie = { ...ligne, id: nanoid(), pack_id: nouveau.id, quantite: q, prix_unitaire: prixNouveau };
+        const cols = Object.keys(copie);
+        db.prepare(`INSERT INTO ventes (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`).run(...cols.map((k) => copie[k]));
+      }
+    }
+    if (remettre) mouvement(ligne.pack_id, +q, "retour", { reference: cmd.numero, auteurId: req.user?.id, note });
+    if (nouveau) mouvement(nouveau.id, -q, "vente", { reference: cmd.numero, auteurId: req.user?.id, note: "Échange" });
+    db.prepare("INSERT INTO retours (id, commande_id, pack_id, quantite, motif, montant, echange_pack_id, echange_montant, difference, remis_en_stock, note, auteur_id, cree_le) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(nanoid(), cmd.id, ligne.pack_id, q, motif, montant, nouveau?.id || null, montantEchange, difference, remettre ? 1 : 0, note, req.user?.id || null, new Date().toISOString());
+    db.prepare("UPDATE commandes SET maj_le = ? WHERE id = ?").run(new Date().toISOString(), cmd.id);
+    const f = (n) => Math.round(Math.abs(n)).toLocaleString("fr-FR").replace(/[\u202f\u00a0]/g, " ") + " FCFA";
+    const suite = difference > 0 ? `${f(difference)} à rembourser au client` : difference < 0 ? `complément de ${f(difference)} à encaisser` : "sans différence de prix";
+    ajouterEvenement(cmd.id, { type: "note", auteurId: req.user?.id, texte: motif === "echange"
+      ? `Échange : ${q} × ${nomRendu} rendu contre ${q} × ${nouveau.nom} — ${suite}.${remettre ? "" : " Article rendu non remis en stock."}${note ? " " + note : ""}`
+      : `Retour (rétractation) : ${q} × ${nomRendu} — ${suite}.${remettre ? " Remis en stock." : " Non remis en stock."}${note ? " " + note : ""}` });
+  })();
+  res.status(201).json({ commande: enrichir(lire(cmd.id)), difference });
+});
+
 router.delete("/:id", adminOnly, (req, res) => {
   const cmd = lire(req.params.id);
   if (!cmd) return res.status(404).json({ erreur: "Commande introuvable" });

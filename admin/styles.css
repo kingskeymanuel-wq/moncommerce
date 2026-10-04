@@ -1516,3 +1516,20 @@ div.prix-barre { margin-left: 0; }
 .operateurs-paiement { display: grid; gap: 12px; }
 .operateur-paiement { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; }
 .operateur-paiement > .row { flex-wrap: wrap; }
+
+/* ---------- Commande : retours d'articles, lignes lisibles sur téléphone ---------- */
+.ligne-commande { align-items: flex-start; }
+.ligne-commande .grow { min-width: 0; }
+.ligne-commande .ligne-total { min-width: 96px; text-align: right; white-space: nowrap; }
+.retour-ligne { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; }
+.retour-ligne .grow { min-width: 180px; }
+@media (max-width: 640px) {
+  .card-head { flex-wrap: wrap; }
+  .card-head > .card-actions { margin-left: auto; }
+  .ligne-commande .ligne-total { min-width: 0; }
+}
+@media (max-width: 640px) {
+  .card-head > :first-child:not(.card-actions) { flex: 0 1 auto; min-width: min-content; }
+  .card-head .card-title .badge { white-space: nowrap; }
+  .card-head > .card-actions { flex-wrap: wrap; justify-content: flex-end; }
+}
