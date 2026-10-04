@@ -49,13 +49,14 @@ router.post("/", (req, res) => {
   const stockInitial = entierPositif(stock);
   db.transaction(() => {
     db.prepare(
-      `INSERT INTO packs (id, nom, description, contenu, prix, cout, stock, seuil_alerte, sku, emoji, teinte, actif, image, prix_promo, promo_fin, cree_le)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO packs (id, nom, description, contenu, prix, cout, stock, seuil_alerte, sku, emoji, teinte, actif, image, prix_promo, promo_fin, cree_le, categorie, pieces_par_lot)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id, nom, description || "", texte(req.body.contenu), Number(prix), cout == null || cout === "" ? null : Number(cout),
       req.body.seuil_alerte == null ? 10 : entierPositif(req.body.seuil_alerte),
       sku || null, emoji || "📦", Number(teinte) || 0, actif === false || actif === 0 ? 0 : 1, image,
-      prixOuNull(req.body.prix_promo), dateOuNull(req.body.promo_fin), new Date().toISOString()
+      prixOuNull(req.body.prix_promo), dateOuNull(req.body.promo_fin), new Date().toISOString(),
+      texte(req.body.categorie, 60)?.trim() || null, Math.max(1, entierPositif(req.body.pieces_par_lot) || 1)
     );
     if (stockInitial) mouvement(id, stockInitial, "stock_initial", { auteurId: req.user?.id });
   })();
@@ -67,7 +68,7 @@ router.put("/:id", (req, res) => {
   const existant = lire(req.params.id);
   if (!existant) return res.status(404).json({ erreur: "Pack introuvable" });
   const c = { ...existant };
-  for (const k of ["nom", "description", "contenu", "prix", "cout", "stock", "seuil_alerte", "sku", "emoji", "teinte", "actif", "prix_promo", "promo_fin"]) {
+  for (const k of ["nom", "description", "contenu", "prix", "cout", "stock", "seuil_alerte", "sku", "emoji", "teinte", "actif", "prix_promo", "promo_fin", "categorie", "pieces_par_lot"]) {
     if (req.body[k] !== undefined) c[k] = req.body[k];
   }
   if (!c.nom || !(Number(c.prix) > 0)) return res.status(400).json({ erreur: "nom et prix (> 0) sont requis" });
@@ -78,11 +79,12 @@ router.put("/:id", (req, res) => {
   try { image = resoudreImage(req.body.image, existant.image, existant.id); } catch (e) { if (e instanceof ErreurImage) return res.status(400).json({ erreur: e.message }); throw e; }
   db.transaction(() => {
     db.prepare(
-      `UPDATE packs SET nom=?, description=?, contenu=?, prix=?, cout=?, seuil_alerte=?, sku=?, emoji=?, teinte=?, actif=?, image=?, prix_promo=?, promo_fin=? WHERE id=?`
+      `UPDATE packs SET nom=?, description=?, contenu=?, prix=?, cout=?, seuil_alerte=?, sku=?, emoji=?, teinte=?, actif=?, image=?, prix_promo=?, promo_fin=?, categorie=?, pieces_par_lot=? WHERE id=?`
     ).run(
       c.nom, c.description, texte(c.contenu), Number(c.prix), c.cout == null || c.cout === "" ? null : Number(c.cout),
       entierPositif(c.seuil_alerte), c.sku, c.emoji, Number(c.teinte) || 0, c.actif === false || c.actif === 0 ? 0 : 1, image,
-      promo, promo == null ? null : dateOuNull(c.promo_fin), req.params.id
+      promo, promo == null ? null : dateOuNull(c.promo_fin),
+      texte(c.categorie, 60)?.trim() || null, Math.max(1, entierPositif(c.pieces_par_lot) || 1), req.params.id
     );
     const delta = entierPositif(c.stock) - existant.stock;
     if (req.body.stock !== undefined && delta) mouvement(existant.id, delta, "ajustement", { auteurId: req.user?.id, note: "Modification de la fiche produit" });

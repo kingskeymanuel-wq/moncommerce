@@ -4,7 +4,8 @@
  *
  * Format d'un ticket (identique à GET /api/recus/:jeton) :
  * { boutique:{nom,adresse,telephone,message}, numero, date, statut, vendeur, client,
- *   lignes:[{nom,quantite,prix_unitaire,total}], sous_total, frais_livraison, total,
+ *   numero_ticket, type_vente (b2c|b2b), contact, adresse_livraison,
+ *   lignes:[{nom,quantite,prix_unitaire,total,pieces_par_lot,articles}], total_articles, sous_total, frais_livraison, total,
  *   paiement:{mode,statut,montant_recu,monnaie,reference}, lien }
  */
 
@@ -57,15 +58,26 @@ export function lignesTicket(t) {
   if (t.boutique?.telephone) L.push({ k: "centre", txt: "Tél : " + t.boutique.telephone });
   L.push({ k: "sep" });
   L.push({ k: "centre", txt: t.provisoire ? "RÉCAPITULATIF — TICKET PROVISOIRE" : t.canal === "en_ligne" ? "BON DE COMMANDE EN LIGNE" : "TICKET DE CAISSE", gras: true });
-  L.push({ k: "ligne", g: t.numero ? "N° " + t.numero : "N° à la validation", d: d.toLocaleDateString("fr-FR") + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) });
+  if (t.type_vente === "b2b") L.push({ k: "centre", txt: "VENTE PROFESSIONNELLE (B2B)" });
+  if (t.numero_ticket) L.push({ k: "ligne", g: "Ticket", d: t.numero_ticket });
+  L.push({ k: "ligne", g: t.numero ? "Commande " + t.numero : "N° à la validation", d: d.toLocaleDateString("fr-FR") + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) });
   if (t.vendeur) L.push({ k: "ligne", g: "Vendeur", d: t.vendeur });
   if (t.client) L.push({ k: "ligne", g: "Client", d: t.client });
+  // Contact et adresse : le ticket sert aussi d'étiquette sur le colis
+  if (t.contact) L.push({ k: "ligne", g: "Contact", d: t.contact });
+  if (t.adresse_livraison) L.push({ k: "centre", txt: "Livraison : " + t.adresse_livraison });
   L.push({ k: "sep" });
+  let articles = 0;
   for (const l of t.lignes || []) {
+    const parLot = Math.max(1, Number(l.pieces_par_lot) || 1);
+    articles += l.articles ?? l.quantite * parLot;
     L.push({ k: "texte", txt: l.nom });
     L.push({ k: "ligne", g: `  ${l.quantite} x ${n(l.prix_unitaire)}`, d: n(l.total) });
+    // Lot : nombre d'articles réellement remis (2 lots de 3 = 6 articles)
+    if (parLot > 1) L.push({ k: "ligne", g: `  lot de ${parLot}`, d: `${l.quantite * parLot} articles` });
   }
   L.push({ k: "sep" });
+  L.push({ k: "ligne", g: "Nombre d'articles", d: String(t.total_articles ?? articles) });
   if (t.frais_livraison > 0) {
     L.push({ k: "ligne", g: "Sous-total", d: n(t.sous_total) });
     L.push({ k: "ligne", g: "Livraison", d: n(t.frais_livraison) });
@@ -75,9 +87,10 @@ export function lignesTicket(t) {
   const p = t.paiement || {};
   const payee = !p.statut || p.statut === "payee";
   L.push({ k: "ligne", g: "Paiement", d: p.statut === "en_attente" ? "À la livraison" : p.mode });
-  if (payee && p.montant_recu != null) {
+  // Espèces : seulement s'il y a eu de la monnaie à rendre
+  if (payee && p.montant_recu != null && p.monnaie > 0) {
     L.push({ k: "ligne", g: "Reçu", d: n(p.montant_recu) });
-    L.push({ k: "ligne", g: "Monnaie rendue", d: n(p.monnaie || 0) });
+    L.push({ k: "ligne", g: "Monnaie rendue", d: n(p.monnaie) });
   }
   if (p.reference) L.push({ k: "ligne", g: "Réf.", d: p.reference });
   if (t.provisoire) L.push({ k: "badge", txt: "NON VALIDÉ — À CONFIRMER" });
@@ -157,7 +170,7 @@ async function construirePdf(t) {
   return doc;
 }
 
-const nomFichier = (t) => `ticket-${String(t.numero || "provisoire").replace(/[^\w-]/g, "")}.pdf`;
+const nomFichier = (t) => `ticket-${String(t.numero_ticket || t.numero || "provisoire").replace(/[^\w-]/g, "")}.pdf`;
 
 /** Génère et télécharge le ticket au format PDF. */
 export async function telechargerTicketPdf(t) {

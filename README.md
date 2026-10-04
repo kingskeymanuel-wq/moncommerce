@@ -163,6 +163,28 @@ ou les désactive.
    imprimable). Le vendeur peut aussi l'imprimer en 80 mm, l'envoyer par
    **WhatsApp**, **e-mail** ou **SMS** au client.
 
+### Le contrôle par les tickets
+- **Pas de vente sans ticket** : chaque vente (caisse, B2B, boutique en ligne)
+  reçoit un ticket numéroté `T-000001`, `T-000002`… Un numéro n'est jamais
+  réutilisé : un ticket supprimé laisse un trou visible dans la série.
+- **Le vendeur doit remettre le ticket** : après une vente, la fenêtre ne se ferme
+  qu'une fois le ticket imprimé, téléchargé ou envoyé. Chaque action est
+  journalisée (qui, quoi, quand).
+- **Page « Tickets de caisse »** : tickets émis, tickets non remis, ventes par
+  vendeur, **écoulement des articles d'après les tickets**, journal filtrable et
+  export CSV. Le vendeur n'y voit que ses propres tickets.
+- **Lots** : un produit peut indiquer ses *articles par lot* (lot de 3 = 3). Le
+  ticket, les commandes et le stock affichent alors le nombre d'articles
+  réellement sortis (2 lots de 3 = 6 articles).
+- **Ticket = étiquette de colis** : il porte le contact du client, l'adresse et le
+  montant de la livraison. « Monnaie rendue » n'apparaît que s'il y en a eu.
+
+### Enregistrer une vente
+Contact (téléphone), nom facultatif, adresse, ville → catégorie → clic sur
+l'article → quantité. Options : **livraison** (frais ajoutés au ticket) et **vente
+B2B**. Le client est reconnu à son numéro. La liste des commandes montre
+directement contact, article, quantité, montant, lieu de livraison et statut.
+
 ### Marketing et fidélisation
 - Le client accepte (case à cocher) de recevoir les offres lors de son achat ;
   chaque message contient un lien **STOP** de désinscription (`/#/stop/…`).

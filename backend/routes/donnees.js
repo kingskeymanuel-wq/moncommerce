@@ -5,6 +5,7 @@ const { adminOnly } = require("../middleware/auth");
 const { versIso, idOuNouveau } = require("../lib/outils");
 const { lireBoutique, ecrireBoutique } = require("./parametres");
 const { resoudreImage } = require("../lib/images");
+const { numeroterManquants } = require("../lib/tickets");
 const router = express.Router();
 
 /**
@@ -43,6 +44,9 @@ router.get("/", (req, res) => {
       .all()
       .filter((e) => idsCommandes.has(e.commande_id))
       .map((e) => ({ ...e, cree_le: versIso(e.cree_le) })),
+    // Journal des tickets de caisse (générés, imprimés, envoyés…) des commandes visibles
+    tickets: db.prepare("SELECT id, commande_id, action, auteur_id, cree_le FROM tickets_journal ORDER BY cree_le").all()
+      .filter((t) => idsCommandes.has(t.commande_id)).map((t) => ({ ...t, cree_le: versIso(t.cree_le) })),
     investissements: admin ? db.prepare("SELECT * FROM investissements ORDER BY date_invest DESC").all() : [],
     boutique: lireBoutique(),
   });
@@ -63,7 +67,7 @@ router.post("/import", adminOnly, (req, res) => {
 
   try {
     db.transaction(() => {
-      db.exec("DELETE FROM paiements_en_ligne; DELETE FROM commande_evenements; DELETE FROM commandes; DELETE FROM ventes; DELETE FROM packs; DELETE FROM clients; DELETE FROM investissements;");
+      db.exec("DELETE FROM tickets_journal; DELETE FROM paiements_en_ligne; DELETE FROM commande_evenements; DELETE FROM commandes; DELETE FROM ventes; DELETE FROM packs; DELETE FROM clients; DELETE FROM investissements;");
 
       const insClient = db.prepare("INSERT INTO clients (id, nom, telephone, email, ville, statut, notes, supprime, cree_le, consentement_marketing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
       const insPack = db.prepare("INSERT INTO packs (id, nom, description, prix, cout, stock, sku, emoji, teinte, actif, supprime, cree_le, image, contenu, prix_promo, promo_fin, seuil_alerte) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
@@ -125,13 +129,21 @@ router.post("/import", adminOnly, (req, res) => {
       const insEvt = db.prepare("INSERT INTO commande_evenements (id, commande_id, type, statut, texte, cree_le) VALUES (?, ?, ?, ?, ?, ?)");
       for (const e of d.evenements || []) {
         if (!cmdIds.has(e.commande_id)) continue;
-        insEvt.run(nanoid(), e.commande_id, ["note", "paiement"].includes(e.type) ? e.type : "statut", e.statut || null, e.texte || null, e.cree_le || maintenant);
+        insEvt.run(nanoid(), e.commande_id, ["note", "paiement", "ticket"].includes(e.type) ? e.type : "statut", e.statut || null, e.texte || null, e.cree_le || maintenant);
       }
 
       const insInv = db.prepare("INSERT INTO investissements (id, libelle, categorie, montant, date_invest) VALUES (?, ?, ?, ?, ?)");
       for (const i of d.investissements) {
         insInv.run(idOuNouveau(i.id), i.libelle || "Dépense", i.categorie || "Autre", Number(i.montant) || 0, String(i.date_invest || maintenant).slice(0, 10));
       }
+      // Champs apparus en v7 : catégories, lots, tickets
+      const majPack = db.prepare("UPDATE packs SET categorie = ?, pieces_par_lot = ? WHERE id = ?");
+      for (const p of d.packs) if (packIds.has(p.id)) majPack.run(p.categorie ? String(p.categorie).slice(0, 60) : null, Math.max(1, Math.round(Number(p.pieces_par_lot) || 1)), p.id);
+      const majCmd = db.prepare("UPDATE commandes SET numero_ticket = ?, type_vente = ?, ticket_remis_le = ? WHERE id = ?");
+      for (const c of d.commandes) if (cmdIds.has(c.id)) majCmd.run(c.numero_ticket || null, c.type_vente === "b2b" ? "b2b" : "b2c", c.ticket_remis_le || null, c.id);
+      const insTicket = db.prepare("INSERT INTO tickets_journal (id, commande_id, action, auteur_id, cree_le) VALUES (?, ?, ?, NULL, ?)");
+      for (const t of d.tickets || []) if (cmdIds.has(t.commande_id)) insTicket.run(nanoid(), t.commande_id, String(t.action || "genere").slice(0, 30), t.cree_le || maintenant);
+      numeroterManquants(); // commandes d'une sauvegarde plus ancienne
       if (d.boutique && typeof d.boutique === "object") ecrireBoutique(d.boutique);
     })();
   } catch (e) {

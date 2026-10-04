@@ -1493,3 +1493,7 @@ div.prix-barre { margin-left: 0; }
 .compte-test .grow { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
 .compte-test b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .compte-test small { color: var(--text-3); font-size: 12px; }
+
+/* ---------- v7 : tickets, liste des commandes ---------- */
+.badge-inline { margin-left: 6px; vertical-align: middle; }
+.table td .cell-sub .badge { margin-top: 2px; }

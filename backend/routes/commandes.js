@@ -7,6 +7,7 @@ const { lignesCommande, totalCommande, changerStatut, enregistrerPaiement, suppr
 const { envoyerEmail } = require("../lib/email");
 const { ticketEmail } = require("../lib/ticketEmail");
 const { adminOnly } = require("../middleware/auth");
+const { journaliser, ACTIONS_VENDEUR } = require("../lib/tickets");
 const router = express.Router();
 
 const STATUTS_VALIDES = ["en_attente", "confirmee", "expediee", "livree", "annulee"];
@@ -136,6 +137,7 @@ router.post("/:id/envoyer-recu", async (req, res) => {
   try {
     const envoi = await envoyerSms(telephone, `${boutique} : merci pour votre achat (${cmd.numero}). Votre ticket de caisse : ${lien}`);
     ajouterEvenement(cmd.id, { type: "note", texte: `Ticket envoyé par SMS au ${telephone}`, auteurId: req.user?.id });
+    journaliser(cmd.id, "sms", req.user?.id, { evenement: false });
     res.json({ message: envoi?.simule ? "SMS simulé (aucun fournisseur configuré)" : "SMS envoyé", simule: !!envoi?.simule });
   } catch (e) {
     res.status(502).json({ erreur: "Envoi du SMS impossible pour le moment" });
@@ -155,12 +157,23 @@ router.post("/:id/envoyer-email", async (req, res) => {
   try {
     const envoi = await envoyerEmail({ a: email, sujet, html, texte });
     if (client && !client.email) db.prepare("UPDATE clients SET email = ? WHERE id = ?").run(email, client.id);
+    journaliser(cmd.id, "email", req.user?.id, { evenement: false });
     ajouterEvenement(cmd.id, { type: "note", texte: `Ticket envoyé par e-mail à ${email}${envoi?.simule ? " (simulé : aucun serveur e-mail configuré)" : ""}`, auteurId: req.user?.id });
     res.json({ message: envoi?.simule ? "E-mail simulé (aucun serveur e-mail configuré)" : "E-mail envoyé", simule: !!envoi?.simule, email });
   } catch (e) {
     console.error("E-mail ticket :", e.message);
     res.status(502).json({ erreur: "Envoi de l'e-mail impossible : vérifiez les réglages SMTP du serveur" });
   }
+});
+
+// POST /api/commandes/:id/ticket — { action: imprime | pdf | whatsapp | lien } : le vendeur déclare
+// ce qu'il a fait du ticket. Une vente dont le ticket n'a jamais été remis reste signalée à l'administrateur.
+router.post("/:id/ticket", (req, res) => {
+  const cmd = lire(req.params.id);
+  if (!cmd) return res.status(404).json({ erreur: "Commande introuvable" });
+  if (!ACTIONS_VENDEUR.includes(req.body.action)) return res.status(400).json({ erreur: `action doit être l'une de : ${ACTIONS_VENDEUR.join(", ")}` });
+  db.transaction(() => journaliser(cmd.id, req.body.action, req.user?.id))();
+  res.json(enrichir(lire(cmd.id)));
 });
 
 // DELETE /api/commandes/:id — supprime la commande et ses lignes ; le stock est

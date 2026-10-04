@@ -29,6 +29,7 @@ const cinetpay = require("../lib/cinetpay");
 const { envoyerEmail } = require("../lib/email");
 const { ticketEmail } = require("../lib/ticketEmail");
 const { mouvement } = require("../lib/stock");
+const { genererTicket, journaliser } = require("../lib/tickets");
 const { prixEffectif, promoActive, remisePourcent } = require("../lib/prix");
 const router = express.Router();
 
@@ -92,6 +93,7 @@ function produitsPublics() {
     // Prix appliqué (promotion comprise) et prix normal barré pendant une promotion
     prix: prixEffectif(p), prix_normal: promoActive(p) ? p.prix : null, remise: remisePourcent(p), promo_fin: promoActive(p) ? p.promo_fin : null,
     contenu: String(p.contenu || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean),
+    categorie: p.categorie || null, pieces_par_lot: Math.max(1, Number(p.pieces_par_lot) || 1),
     stock: Math.max(0, p.stock), disponible: p.stock > 0, ventes: vendus.get(p.id) || 0, cree_le: versIso(p.cree_le),
   }));
 }
@@ -236,6 +238,7 @@ router.post("/commandes", limiteCommandes, espacePublic, async (req, res) => {
       ).run(commandeId, venteIds[0], numero, [client.adresse, client.ville].filter(Boolean).join(", "), client.instructions || null,
         jeton, frais, client.telephone, client.email || null, maintenant);
       ajouterEvenement(commandeId, { statut: "en_attente", texte: "Commande passée sur la boutique en ligne", date: maintenant });
+      genererTicket(commandeId, vendeurId, maintenant);
       if (modePaiement === "transfert") {
         ajouterEvenement(commandeId, { type: "paiement", texte: `Transfert ${champsPaiement.mode} déclaré par le client (réf. ${champsPaiement.reference}) — à vérifier`, date: maintenant });
       }
@@ -285,7 +288,7 @@ router.post("/commandes", limiteCommandes, espacePublic, async (req, res) => {
   if (client.email) {
     const cmd = db.prepare("SELECT * FROM commandes WHERE id = ?").get(commandeId);
     const { sujet, html, texte } = ticketEmail(ticketCommande(cmd), `${urlPublique(req)}/#/commande/${jeton}`);
-    envoyerEmail({ a: client.email, sujet, html, texte }).catch((e) => console.error("E-mail de commande :", e.message));
+    envoyerEmail({ a: client.email, sujet, html, texte }).then(() => journaliser(commandeId, "email", null)).catch((e) => console.error("E-mail de commande :", e.message));
   }
 
   res.status(201).json(reponse);
@@ -353,6 +356,8 @@ router.get("/commandes/:jeton", espaceParJeton((req) => lireParJeton(req.params.
     }
   }
 
+  // Le client a son ticket sous les yeux : il est considéré comme remis
+  journaliser(cmd.id, "consulte_client", null, { unique: true });
   const cfg = configPublique();
   const t = ticketCommande(cmd);
   const etapes = db.prepare("SELECT type, statut, texte, cree_le FROM commande_evenements WHERE commande_id = ? AND type <> 'note' ORDER BY cree_le")

@@ -58,6 +58,7 @@ function supprimerCommande(cmd, auteurId = null) {
 
 // Prénom + initiale du nom : suffisant sur un ticket, sans exposer l'identité complète
 const nomCourt = (nom) => {
+  if (/^Client \d/.test(String(nom || ""))) return null; // client enregistré sans nom : le contact suffit
   const parts = String(nom || "").trim().split(/\s+/);
   return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0] || null;
 };
@@ -66,13 +67,19 @@ const nomCourt = (nom) => {
 function ticketCommande(cmd) {
   const lignes = lignesCommande(cmd);
   const v = lignes[0] || {};
-  const packs = new Map(db.prepare("SELECT id, nom, sku, image, emoji, teinte FROM packs").all().map((p) => [p.id, p]));
-  const client = v.client_id ? db.prepare("SELECT nom FROM clients WHERE id = ?").get(v.client_id) : null;
+  const packs = new Map(db.prepare("SELECT id, nom, sku, image, emoji, teinte, pieces_par_lot FROM packs").all().map((p) => [p.id, p]));
+  const client = v.client_id ? db.prepare("SELECT nom, telephone FROM clients WHERE id = ?").get(v.client_id) : null;
+  const pieces = (l) => l.quantite * Math.max(1, Number(packs.get(l.pack_id)?.pieces_par_lot) || 1);
   const vendeur = v.vendeur_id ? db.prepare("SELECT nom FROM utilisateurs WHERE id = ?").get(v.vendeur_id) : null;
   const total = totalCommande(cmd, lignes);
   return {
     boutique: lireBoutique(),
     numero: cmd.numero,
+    numero_ticket: cmd.numero_ticket || null,
+    type_vente: cmd.type_vente || "b2c",
+    // Étiquette de livraison : contact et adresse du client
+    contact: cmd.contact_telephone || client?.telephone || null,
+    adresse_livraison: cmd.adresse_livraison || null,
     date: versIso(v.date_vente),
     statut: cmd.statut,
     canal: cmd.canal,
@@ -80,8 +87,11 @@ function ticketCommande(cmd) {
     client: client ? nomCourt(client.nom) : null,
     lignes: lignes.map((l) => {
       const p = packs.get(l.pack_id);
-      return { nom: p?.nom || "Article", sku: p?.sku || null, image: p?.image || null, emoji: p?.emoji || null, teinte: p?.teinte ?? null, quantite: l.quantite, prix_unitaire: l.prix_unitaire, total: l.quantite * l.prix_unitaire };
+      return { nom: p?.nom || "Article", sku: p?.sku || null, image: p?.image || null, emoji: p?.emoji || null, teinte: p?.teinte ?? null, quantite: l.quantite, prix_unitaire: l.prix_unitaire, total: l.quantite * l.prix_unitaire,
+        pieces_par_lot: Math.max(1, Number(p?.pieces_par_lot) || 1), articles: pieces(l) };
     }),
+    // Nombre d'articles réellement sortis (2 lots de 3 = 6 articles)
+    total_articles: lignes.reduce((s, l) => s + pieces(l), 0),
     sous_total: sousTotal(lignes),
     frais_livraison: Number(cmd.frais_livraison) || 0,
     total,

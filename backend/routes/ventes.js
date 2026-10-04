@@ -4,6 +4,7 @@ const { validerPaiement } = require("../lib/paiements");
 const { mouvement } = require("../lib/stock");
 const { prixEffectif } = require("../lib/prix");
 const db = require("../db");
+const { genererTicket } = require("../lib/tickets");
 const { idOuNouveau, versIso, prochainNumero, ajouterEvenement } = require("../lib/outils");
 const router = express.Router();
 
@@ -43,7 +44,8 @@ router.get("/:id", (req, res) => {
 
 // POST /api/ventes — enregistre la vente, décrémente le stock et génère
 // automatiquement la commande à suivre.
-// { id?, commande_id?, client_id, pack_id, quantite, adresse_livraison?,
+// Chaque vente reçoit un ticket de caisse numéroté (aussi pour une vente B2B).
+// { id?, commande_id?, client_id, pack_id, quantite, adresse_livraison?, frais_livraison?, type_vente? (b2c | b2b),
 //   mode_paiement, montant_recu? (espèces), telephone_paiement? (Mobile Money), reference_paiement? }
 router.post("/", (req, res) => {
   const { client_id, pack_id, quantite, adresse_livraison } = req.body;
@@ -60,7 +62,10 @@ router.post("/", (req, res) => {
     return res.status(409).json({ erreur: `Stock insuffisant pour ${pack.nom} (disponible : ${pack.stock})` });
   }
   const prix = prixEffectif(pack); // prix promotionnel si une promotion est en cours
-  const paiement = validerPaiement(req.body, qte * prix);
+  const frais = Math.max(0, Math.round(Number(req.body.frais_livraison) || 0));
+  if (frais > 1000000) return res.status(400).json({ erreur: "Frais de livraison invalides" });
+  const typeVente = req.body.type_vente === "b2b" ? "b2b" : "b2c";
+  const paiement = validerPaiement(req.body, qte * prix + frais);
   if (paiement.erreur) return res.status(400).json({ erreur: paiement.erreur });
 
   const venteId = idOuNouveau(req.body.id);
@@ -80,8 +85,10 @@ router.post("/", (req, res) => {
 
 
     db.prepare(
-      "INSERT INTO commandes (id, vente_id, numero, statut, adresse_livraison, jeton_recu, maj_le) VALUES (?, ?, ?, 'en_attente', ?, ?, ?)"
-    ).run(commandeId, venteId, numero, adresse_livraison ?? client.ville ?? "", nanoid(24), maintenant);
+      `INSERT INTO commandes (id, vente_id, numero, statut, adresse_livraison, jeton_recu, frais_livraison, type_vente, contact_telephone, maj_le)
+       VALUES (?, ?, ?, 'en_attente', ?, ?, ?, ?, ?, ?)`
+    ).run(commandeId, venteId, numero, adresse_livraison ?? client.ville ?? "", nanoid(24), frais, typeVente, client.telephone || null, maintenant);
+    genererTicket(commandeId, req.user?.id, maintenant);
     mouvement(pack_id, -qte, "vente", { reference: numero, auteurId: req.user?.id });
     ajouterEvenement(commandeId, { statut: "en_attente", auteurId: req.user?.id, date: maintenant });
   })();

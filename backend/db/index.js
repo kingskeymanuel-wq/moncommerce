@@ -70,6 +70,17 @@ function ouvrirEspace(fichier) {
   // v6 : un vendeur peut être désactivé par son administrateur (son historique est conservé)
   ajouterColonne("utilisateurs", "actif", "INTEGER NOT NULL DEFAULT 1");
 
+  // v7 : catégories et lots, tickets de caisse numérotés et suivis, ventes B2B
+  ajouterColonne("packs", "categorie", "TEXT");
+  ajouterColonne("packs", "pieces_par_lot", "INTEGER NOT NULL DEFAULT 1"); // un « lot de 3 » sort 3 articles par unité vendue
+  ajouterColonne("commandes", "numero_ticket", "TEXT");
+  ajouterColonne("commandes", "type_vente", "TEXT NOT NULL DEFAULT 'b2c'"); // b2c | b2b
+  ajouterColonne("commandes", "ticket_remis_le", "TEXT");
+  db.exec(`CREATE TABLE IF NOT EXISTS tickets_journal (
+    id TEXT PRIMARY KEY, commande_id TEXT NOT NULL REFERENCES commandes(id) ON DELETE CASCADE,
+    action TEXT NOT NULL, auteur_id TEXT, cree_le TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_tickets_commande ON tickets_journal(commande_id);`);
+
   // Anciens libellés de paiement → libellés actuels
   db.prepare("UPDATE ventes SET mode_paiement = 'Carte bancaire' WHERE mode_paiement = 'Carte'").run();
 

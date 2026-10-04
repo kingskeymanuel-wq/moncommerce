@@ -17,11 +17,25 @@ const { nanoid } = require("nanoid");
 const db = require("./index");
 const { mouvement } = require("../lib/stock");
 const { prochainNumero, ajouterEvenement } = require("../lib/outils");
+const { genererTicket, journaliser } = require("../lib/tickets");
 
 const ACTIF = process.env.DONNEES_TEST !== "0";
 const MOT_DE_PASSE = process.env.MOT_DE_PASSE_TEST || "test-2026";
 const jours = (n, heure = 10) => { const d = new Date(Date.now() - n * 864e5); d.setUTCHours(heure, 15, 0, 0); return d.toISOString(); };
 const photo = (id) => `https://images.unsplash.com/photo-${id}?w=800&h=800&fit=crop&q=75&auto=format`;
+
+/* Catégorie de chaque produit et, pour les lots, nombre d'articles par lot (référence → [catégorie, articles]) */
+const FICHES = {
+  "PC-401": ["Tenues chic"], "PC-402": ["Tenues chic"], "PC-403": ["Tenues chic"], "PC-404": ["Tenues chic"], "PC-405": ["Tenues chic"], "PC-406": ["Tenues chic"],
+  "PC-407": ["Pyjamas"], "PC-408": ["Pyjamas"], "PC-409": ["Chaussettes", 3], "PC-410": ["Chaussettes", 5], "PC-411": ["Chaussettes", 3],
+  "PC-412": ["Bébé", 3], "PC-413": ["Bébé"], "PC-414": ["Bébé", 5], "PC-415": ["Vêtements"], "PC-416": ["Chaussures"],
+  "BI-101": ["Maquillage"], "BI-102": ["Maquillage"], "BI-103": ["Parfums"], "BI-104": ["Maquillage"], "BI-105": ["Ongles", 5], "BI-106": ["Soins du visage"],
+  "BI-107": ["Maquillage"], "BI-108": ["Ongles"], "BI-109": ["Ongles"], "BI-110": ["Ongles", 6], "BI-111": ["Pédicure"],
+  "EK-201": ["Soins du corps"], "EK-202": ["Soins du corps", 3], "EK-203": ["Soins du corps"], "EK-204": ["Coffrets"], "EK-205": ["Soins du corps"], "EK-206": ["Cheveux"],
+  "EK-207": ["Soins du corps"], "EK-208": ["Cheveux"], "EK-209": ["Cheveux", 2], "EK-210": ["Cheveux"], "EK-211": ["Cheveux"],
+  "RM-301": ["Perruques"], "RM-302": ["Perruques"], "RM-303": ["Perruques"], "RM-304": ["Perruques"], "RM-305": ["Perruques"],
+  "RM-306": ["Mèches à tresser", 6], "RM-307": ["Mèches à tresser", 6], "RM-308": ["Tissages", 3], "RM-309": ["Tissages", 3], "RM-310": ["Mèches à tresser", 5], "RM-311": ["Mèches à tresser", 4],
+};
 
 const ESPACES = [
   {
@@ -53,10 +67,11 @@ const ESPACES = [
       { nom: "Marie-Laure Kouadio", telephone: "0500000401", ville: "Riviera", consentement: 1, statut: "VIP" },
       { nom: "Fatoumata Cissé", telephone: "0500000402", ville: "Cocody", consentement: 1 },
       { nom: "Jean-Marc Aké", telephone: "0500000403", ville: "Bingerville", consentement: 0 },
+      { nom: "Crèche Les Petits Anges", telephone: "0500000404", ville: "Cocody", consentement: 1 },
     ],
     ventes: [
       [9, 0, 0, 1, 1, { mode: "Orange Money" }], [7, 1, 8, 3, 1], [6, 2, 6, 2, 0], [4, 0, 2, 1, 1, { mode: "Wave" }], [3, 1, 11, 1, 1],
-      [2, 2, 9, 2, 1], [1, 0, 3, 1, 1, { enLigne: true, statut: "confirmee" }], [0, 1, 6, 1, null, { enLigne: true, statut: "en_attente" }],
+      [5, 3, 8, 10, 1, { b2b: true, mode: "Wave" }], [2, 2, 9, 2, 1, { nonRemis: true }], [1, 0, 3, 1, 1, { enLigne: true, statut: "confirmee" }], [0, 1, 6, 1, null, { enLigne: true, statut: "en_attente" }],
     ],
   },
   {
@@ -86,7 +101,7 @@ const ESPACES = [
     // [jours avant aujourd'hui, client, produit, quantité, vendeur (0 = admin, 1.. = vendeurs, null = aucun), options]
     ventes: [
       [12, 1, 0, 1, 1], [10, 0, 1, 2, 1, { mode: "Orange Money" }], [9, 2, 3, 1, 2], [7, 1, 2, 1, 0, { mode: "Wave" }],
-      [5, 3, 4, 2, 2], [4, 0, 7, 1, 1], [3, 2, 9, 1, 2, { mode: "Wave" }], [2, 1, 1, 3, 1, { mode: "MTN MoMo" }],
+      [5, 3, 4, 2, 2], [4, 0, 7, 1, 1, { nonRemis: true }], [3, 2, 9, 1, 2, { mode: "Wave" }], [2, 1, 1, 3, 1, { mode: "MTN MoMo" }],
       [1, 3, 8, 1, 2, { enLigne: true, statut: "confirmee" }], [0, 2, 5, 1, null, { enLigne: true, statut: "en_attente" }],
     ],
   },
@@ -152,11 +167,11 @@ function remplir(e, utilisateurs) {
   const packs = e.produits.map((p, i) => {
     const id = nanoid();
     db.prepare(
-      `INSERT INTO packs (id, nom, description, contenu, prix, cout, stock, seuil_alerte, sku, emoji, image, teinte, actif, prix_promo, promo_fin, cree_le)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
+      `INSERT INTO packs (id, nom, description, contenu, prix, cout, stock, seuil_alerte, sku, emoji, image, teinte, actif, prix_promo, promo_fin, cree_le, categorie, pieces_par_lot)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`
     ).run(id, p.nom, p.description || "", (p.contenu || []).join("\n") || null, p.prix, p.cout ?? null, p.seuil ?? 5, p.sku, p.emoji, p.image ? photo(p.image) : null, p.teinte ?? 0,
       p.promo ?? null, p.promo ? new Date(Date.now() + 10 * 864e5).toISOString() : null,
-      e.priorite ? new Date(Date.now() - i * 60000).toISOString() : jours(20 - i));
+      e.priorite ? new Date(Date.now() - i * 60000).toISOString() : jours(20 - i), FICHES[p.sku]?.[0] || null, FICHES[p.sku]?.[1] || 1);
     mouvement(id, p.stock, "stock_initial", { auteurId: utilisateurs[0].id });
     return { id, ...p };
   });
@@ -179,9 +194,12 @@ function remplir(e, utilisateurs) {
       !o.enLigne && !o.mode ? qte * prix : null, livraison ? null : date, date);
     const statut = o.statut || "livree";
     db.prepare(
-      `INSERT INTO commandes (id, vente_id, numero, statut, adresse_livraison, jeton_recu, canal, frais_livraison, contact_telephone, maj_le)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
-    ).run(cmdId, venteId, numero, statut, c.ville, nanoid(24), o.enLigne ? "en_ligne" : "boutique", c.telephone, date);
+      `INSERT INTO commandes (id, vente_id, numero, statut, adresse_livraison, jeton_recu, canal, frais_livraison, contact_telephone, type_vente, maj_le)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
+    ).run(cmdId, venteId, numero, statut, c.ville, nanoid(24), o.enLigne ? "en_ligne" : "boutique", c.telephone, o.b2b ? "b2b" : "b2c", date);
+    // Chaque vente a son ticket ; « nonRemis » simule un ticket que le vendeur n'a pas encore remis au client
+    genererTicket(cmdId, vendeur?.id || null, date);
+    if (!o.nonRemis) journaliser(cmdId, o.enLigne ? "consulte_client" : o.mode ? "whatsapp" : "imprime", o.enLigne ? null : vendeur?.id || null, { evenement: false, date });
     mouvement(p.id, -qte, o.enLigne ? "vente_en_ligne" : "vente", { reference: numero, auteurId: vendeur?.id || null });
     ajouterEvenement(cmdId, { statut: "en_attente", texte: o.enLigne ? "Commande passée sur la boutique en ligne" : null, auteurId: vendeur?.id || null, date });
     if (statut !== "en_attente") ajouterEvenement(cmdId, { statut, auteurId: utilisateurs[0].id, date });

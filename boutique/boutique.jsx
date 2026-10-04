@@ -263,6 +263,7 @@ function CarteProduit({ p, i }) {
         <a href={`#/produit/${encodeURIComponent(p.id)}`} className="v-carte-nom">{p.nom}</a>
         <a href={`#/boutique/${p.boutique_slug}`} className="v-carte-boutique"><Store size={12} />{p.boutique_nom}</a>
         {p.description && <p className="v-carte-desc">{p.description}</p>}
+        {p.pieces_par_lot > 1 && <span className="v-lot">Lot de {p.pieces_par_lot} articles</span>}
         <div className="v-carte-bas">
           <span className="v-prix">{fmt(p.prix)}{p.remise > 0 && <s className="v-prix-barre">{fmt(p.prix_normal)}</s>}</span>
           <Btn size="sm" variant={dansPanier ? "secondary" : "primary"} icon={dansPanier ? Check : Plus} disabled={!p.disponible || dansPanier >= p.stock}
@@ -280,15 +281,18 @@ function PageAccueil({ slug }) {
   const avecProduits = boutiques.filter((x) => reste.produits.some((p) => p.boutique_id === x.id));
   const [tri, setTri] = useState("nouveautes");
   const [dispo, setDispo] = useState(false);
+  const [cat, setCat] = useState("");
+  useEffect(() => setCat(""), [slug]);
   const catalogueRef = useRef(null);
   const liste = useMemo(() => {
-    let l = produits.filter((p) => (!dispo || p.disponible) && norm(p.nom + " " + p.description).includes(norm(recherche)));
+    let l = produits.filter((p) => (!dispo || p.disponible) && (!cat || p.categorie === cat) && norm(p.nom + " " + p.description + " " + (p.categorie || "")).includes(norm(recherche)));
     if (tri === "prix-asc") l = [...l].sort((a, b) => a.prix - b.prix);
     if (tri === "prix-desc") l = [...l].sort((a, b) => b.prix - a.prix);
     if (tri === "populaires") l = [...l].sort((a, b) => b.ventes - a.ventes);
     // Les produits épuisés passent en fin de liste
     return [...l.filter((p) => p.disponible), ...l.filter((p) => !p.disponible)];
-  }, [produits, recherche, tri, dispo]);
+  }, [produits, recherche, tri, dispo, cat]);
+  const categories = [...new Set(produits.map((p) => p.categorie).filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr"));
   const b = config.boutique;
   const promos = produits.filter((p) => p.remise > 0 && p.disponible);
 
@@ -358,6 +362,12 @@ function PageAccueil({ slug }) {
             </div>
           </div>
         </div>
+        {categories.length > 1 && (
+          <div className="v-categories">
+            <button className={cx("chip", !cat && "on")} onClick={() => setCat("")}>Tout</button>
+            {categories.map((k) => <button key={k} className={cx("chip", cat === k && "on")} onClick={() => setCat(k)}>{k}</button>)}
+          </div>
+        )}
         {liste.length === 0 ? (
           <div className="empty"><div className="empty-icon"><Search size={26} /></div><h3>Aucun produit trouvé</h3><p>{recherche ? "Essayez un autre mot." : slug ? "Cette boutique n'a pas encore publié de produit." : "Aucun produit n'est encore en vente. Vous vendez ? Créez votre espace et publiez vos produits."}</p>{recherche ? <Btn onClick={() => setRecherche("")}>Voir tous les produits</Btn> : !slug && <a className="btn btn-primary" href="/admin/?creer=1">Créer mon espace</a>}</div>
         ) : (
@@ -558,7 +568,8 @@ function PageCommander() {
 
   const ticketProvisoire = () => ({
     provisoire: true, boutique: config.boutique, numero: null, date: new Date().toISOString(), statut: "en_attente", client: c.nom.trim(), canal: "en_ligne",
-    lignes: lignes.map(({ p, quantite }) => ({ nom: p.nom, quantite, prix_unitaire: p.prix, total: p.prix * quantite })),
+    contact: c.telephone.trim(), adresse_livraison: [c.adresse.trim(), c.ville.trim()].filter(Boolean).join(", "),
+    lignes: lignes.map(({ p, quantite }) => ({ nom: p.nom, quantite, prix_unitaire: p.prix, total: p.prix * quantite, pieces_par_lot: p.pieces_par_lot || 1, articles: quantite * (p.pieces_par_lot || 1) })),
     sous_total: t.sousTotal, frais_livraison: t.frais, total: t.total,
     paiement: { mode: mode === "transfert" ? op : mode === "en_ligne" ? "Paiement en ligne" : "À la livraison", statut: mode === "livraison" ? "en_attente" : mode === "transfert" ? "a_verifier" : "en_cours", reference: mode === "transfert" ? tr.reference : null },
     lien: null,

@@ -113,6 +113,10 @@ app.use((err, req, res, next) => {
   res.status(500).json({ erreur: "Erreur interne du serveur" });
 });
 
+// Ventes enregistrées avant le suivi des tickets : numérotées une fois pour toutes
+const { numeroterManquants } = require("./lib/tickets");
+require("./db").pourChaqueEspace(() => require("./db").transaction(numeroterManquants)());
+
 app.listen(PORT, () => {
   console.log(`✅ Ivoire Shop démarré
    Boutique client : http://localhost:${PORT}/
