@@ -1533,3 +1533,17 @@ div.prix-barre { margin-left: 0; }
   .card-head .card-title .badge { white-space: nowrap; }
   .card-head > .card-actions { flex-wrap: wrap; justify-content: flex-end; }
 }
+
+/* ---------- Transitions plus vivantes ---------- */
+@keyframes pageIn { from { opacity: 0; transform: translateY(16px) scale(.985); filter: blur(5px); } to { opacity: 1; transform: none; filter: none; } }
+.page > .card, .page > .kpi-grid > .card, .page > .grid-main > .card, .layout-detail .card { animation: carteEntre .6s cubic-bezier(.2, 1.2, .35, 1) both; }
+.page > *:nth-child(2) { animation-delay: 60ms; } .page > *:nth-child(3) { animation-delay: 120ms; } .page > *:nth-child(4) { animation-delay: 180ms; } .page > *:nth-child(n+5) { animation-delay: 240ms; }
+.kpi-grid > .card:nth-child(2) { animation-delay: 70ms; } .kpi-grid > .card:nth-child(3) { animation-delay: 140ms; } .kpi-grid > .card:nth-child(4) { animation-delay: 210ms; }
+@keyframes carteEntre { from { opacity: 0; transform: translateY(22px) scale(.97); } to { opacity: 1; transform: none; } }
+.card.kpi, .segment, .formule { transition: transform .3s cubic-bezier(.2, 1.25, .35, 1), box-shadow .25s, border-color .15s; }
+.card.kpi:hover, .segment:hover { transform: translateY(-4px); box-shadow: 0 14px 30px rgba(0, 0, 0, .1); }
+.nav-item { transition: background .15s, transform .25s cubic-bezier(.2, 1.25, .35, 1); }
+.nav-item:hover { transform: translateX(3px); }
+.btn { transition: transform .2s cubic-bezier(.34, 1.56, .64, 1), background .15s, box-shadow .15s, border-color .15s; }
+.btn:active:not(:disabled) { transform: scale(.95); }
+@media (prefers-reduced-motion: reduce) { .page > .card, .layout-detail .card, .page { animation: none; } }

@@ -1021,8 +1021,36 @@ function PageMesCommandes() {
 /* =====================================================================
    Application
    ===================================================================== */
+/* Apparition au défilement : chaque bloc entre en scène quand il devient visible */
+const CIBLES_ANIM = ".v-carte, .v-boutique-carte, .v-section-tete, .v-garanties > div, .g-profil, .g-pack, .g-etapes > div, .g-titre, .g-contact-carte";
+function useApparitions() {
+  useEffect(() => {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    document.body.classList.add("anim-pret");
+    let image = 0, lot = 0;
+    // Un bloc entre en scène dès que son haut passe dans la fenêtre ; ceux qui arrivent ensemble se suivent
+    const verifier = () => {
+      image = 0; lot = 0;
+      document.querySelectorAll(CIBLES_ANIM).forEach((el) => {
+        if (el.classList.contains("vu")) return;
+        el.dataset.anim = "1";
+        if (el.getBoundingClientRect().top < innerHeight * 0.94) { el.style.setProperty("--d", Math.min(lot++, 8) * 70 + "ms"); el.classList.add("vu"); }
+      });
+    };
+    const demander = () => { if (!image) image = requestAnimationFrame(verifier); };
+    verifier();
+    addEventListener("scroll", demander, { passive: true }); addEventListener("resize", demander);
+    const mo = new MutationObserver(demander);
+    mo.observe(document.getElementById("root"), { childList: true, subtree: true });
+    // Filet de sécurité : rien ne reste masqué si le défilement n'est pas détecté
+    const filet = setInterval(verifier, 1500);
+    return () => { removeEventListener("scroll", demander); removeEventListener("resize", demander); mo.disconnect(); clearInterval(filet); cancelAnimationFrame(image); };
+  }, []);
+}
+
 function App() {
   const [route, go] = useRoute();
+  useApparitions("");
   const [boutiques, setBoutiques] = useState(null);
   const [produits, setProduits] = useState([]);
   const [erreur, setErreur] = useState("");
