@@ -530,7 +530,7 @@ function PageCommander() {
   const modes = [
     { cle: "livraison", titre: "Paiement à la livraison", desc: "Payez en espèces ou par Mobile Money au livreur.", icone: Banknote },
     ...(config.paiements.transfert.length ? [{ cle: "transfert", titre: "Transfert Mobile Money", desc: "Payez par le lien ou sur le numéro de la boutique, puis indiquez la référence.", icone: Smartphone }] : []),
-    ...(config.paiements.en_ligne ? [{ cle: "en_ligne", titre: "Payer en ligne maintenant", desc: "Orange Money, MTN MoMo, Moov Money, Wave via CinetPay.", icone: CreditCard }] : []),
+    ...(config.paiements.en_ligne ? [{ cle: "en_ligne", titre: "Orange Money / MTN MoMo — portail sécurisé", desc: "Entrez votre numéro, puis confirmez avec votre code secret sur votre téléphone.", icone: ShieldCheck }] : []),
   ];
   const [mode, setMode] = useState(modes[0].cle);
   const [op, setOp] = useState(config.paiements.transfert[0]?.mode || "");
@@ -543,6 +543,7 @@ function PageCommander() {
   const t = calculTotaux(lignes, config);
   const set = (k, v) => { setC((x) => ({ ...x, [k]: v })); setErr((e) => ({ ...e, [k]: null })); };
   const operateur = config.paiements.transfert.find((o) => o.mode === op);
+  const [portail, setPortail] = useState(false);
 
   if (lignes.length === 0) {
     return <div className="v-section"><div className="empty"><div className="empty-icon"><ShoppingCart size={26} /></div><h3>Votre panier est vide</h3><Btn variant="primary" onClick={() => go("")}>Voir les produits</Btn></div></div>;
@@ -658,23 +659,27 @@ function PageCommander() {
                   <button type="button" key={o.mode} className={cx("pay-opt v-op", op === o.mode && "selected")} onClick={() => setOp(o.mode)}><LogoOperateur mode={o.mode} taille={24} /><span>{o.mode}</span></button>
                 ))}
               </div>
+              {portail && operateur.lien && <PortailPaiement operateur={operateur} montant={t.total} boutique={config.boutique.nom} onFermer={() => setPortail(false)} onPaye={() => { setPortail(false); setTimeout(() => document.getElementById("id-transaction")?.focus(), 100); }} />}
+              {config.paiements.en_ligne && ["Orange Money", "MTN MoMo"].includes(operateur.mode) && (
+                <div className="banner banner-info" style={{ margin: "12px 0" }}><ShieldCheck size={16} /><div><b>Plus simple : le portail de paiement sécurisé.</b> Vous y entrez votre numéro {operateur.mode}, puis vous confirmez avec votre code secret sur votre téléphone. Votre commande est validée automatiquement.<br /><button type="button" className="link" onClick={() => setMode("en_ligne")}>Payer par le portail sécurisé →</button></div></div>
+              )}
               <ol className="v-instructions">
                 <li>
-                  {operateur.lien && <><a className="btn btn-primary v-lien-paiement" href={operateur.lien} target="_blank" rel="noopener noreferrer"><LogoOperateur mode={operateur.mode} taille={20} /><span>Payer {fmt(t.total)} avec {operateur.mode}</span></a><br /></>}
+                  {operateur.lien && <><button type="button" className="btn btn-primary v-lien-paiement" onClick={() => setPortail(true)}><LogoOperateur mode={operateur.mode} taille={20} /><span>Payer {fmt(t.total)} avec {operateur.mode}</span></button><br /></>}
                   {operateur.numero && <>{operateur.lien ? "ou envoyez" : "Envoyez"} <b className="num">{fmt(t.total)}</b> par <b>{operateur.mode}</b> au <b className="num">{operateur.numero}</b> <button type="button" className="link" onClick={() => navigator.clipboard?.writeText(operateur.numero.replace(/\s/g, "")).then(() => toast({ titre: "Numéro copié" }))}><Copy size={12} /> copier</button><br /></>}
-                  <span className="subtle">{operateur.lien && !operateur.numero ? `Le lien ouvre la page de paiement ${operateur.mode} · ` : ""}Titulaire : {operateur.titulaire}</span>
+                  <span className="subtle">{operateur.lien && !operateur.numero ? `Un QR code ${operateur.mode} s'affiche : scannez-le pour payer · ` : ""}Titulaire : {operateur.titulaire}</span>
                 </li>
                 <li>Notez l'<b>ID de transaction</b> indiqué dans le SMS de confirmation.</li>
                 <li>Renseignez-le ci-dessous : nous vérifions la réception puis confirmons votre commande.</li>
               </ol>
               <div className="form-grid">
                 <Field label={`Numéro ${operateur.mode} utilisé`} error={err.trTel}><Input icon={Phone} value={tr.telephone} onChange={(e) => { setTr((x) => ({ ...x, telephone: e.target.value })); setErr((z) => ({ ...z, trTel: null })); }} inputMode="tel" placeholder="07 00 00 00 00" /></Field>
-                <Field label="ID de transaction" error={err.trRef}><Input value={tr.reference} onChange={(e) => { setTr((x) => ({ ...x, reference: e.target.value })); setErr((z) => ({ ...z, trRef: null })); }} placeholder="Ex : MP240929.1234.A5678" /></Field>
+                <Field label="ID de transaction" error={err.trRef}><Input id="id-transaction" value={tr.reference} onChange={(e) => { setTr((x) => ({ ...x, reference: e.target.value })); setErr((z) => ({ ...z, trRef: null })); }} placeholder="Ex : MP240929.1234.A5678" /></Field>
               </div>
             </div>
           )}
           {mode === "en_ligne" && (
-            <div className="banner banner-info" style={{ marginTop: 12 }}><ShieldCheck size={16} /><div>Vous serez redirigé vers la page de paiement sécurisée CinetPay. Votre commande est confirmée automatiquement dès le paiement validé.{config.paiements.en_ligne_test && <><br /><b>Mode test : aucun débit réel.</b></>}</div></div>
+            <div className="banner banner-info" style={{ marginTop: 12 }}><ShieldCheck size={16} /><div>Vous serez redirigé vers le portail de paiement sécurisé CinetPay : vous y entrez votre numéro et le montant est repris automatiquement. Vous recevez ensuite une notification sur votre téléphone pour confirmer avec votre code secret ; votre compte n'est débité qu'après cette confirmation. Le code secret n'est jamais saisi sur ce site.{config.paiements.en_ligne_test && <><br /><b>Mode test : aucun débit réel.</b></>}</div></div>
           )}
           {mode === "livraison" && (
             <div className="banner banner-success" style={{ marginTop: 12 }}><Banknote size={16} /><div>Vous paierez <b className="num">{fmt(t.total)}</b> à la réception de votre commande.</div></div>
@@ -720,6 +725,40 @@ function PageCommander() {
         document.body,
       )}
     </form>
+  );
+}
+
+/* =====================================================================
+   Portail de paiement d'un opérateur : QR code du lien de paiement de la boutique.
+   Le paiement se fait dans l'application de l'opérateur : aucun code secret n'est saisi ici.
+   ===================================================================== */
+function PortailPaiement({ operateur, montant, boutique, onFermer, onPaye }) {
+  useEffect(() => {
+    const k = (e) => e.key === "Escape" && onFermer();
+    addEventListener("keydown", k);
+    document.body.style.overflow = "hidden";
+    return () => { removeEventListener("keydown", k); document.body.style.overflow = ""; };
+  }, []);
+  let domaine = "";
+  try { domaine = new URL(operateur.lien).hostname; } catch { /* lien invalide : jamais proposé */ }
+  return createPortal(
+    <div className="portail-fond" onMouseDown={(e) => e.target === e.currentTarget && onFermer()}>
+      <div className="portail" role="dialog" aria-modal="true" aria-label={`Paiement ${operateur.mode}`}>
+        <button className="portail-fermer" onClick={onFermer} aria-label="Fermer"><X size={18} /></button>
+        <div className="portail-tete"><LogoOperateur mode={operateur.mode} taille={40} /><div><b>Paiement {operateur.mode}</b><small>à {boutique}</small></div></div>
+        <div className="portail-montant"><small>Montant à payer</small><strong className="num">{fmt(montant)}</strong></div>
+        <div className="portail-qr"><QrCode texte={operateur.lien} taille={220} /></div>
+        <ol className="portail-etapes">
+          <li>Ouvrez l'application <b>{operateur.mode}</b> et <b>scannez ce QR code</b>.</li>
+          <li>Entrez le montant : <b className="num">{fmt(montant)}</b>, puis validez.</li>
+          <li>Revenez ici et indiquez l'<b>ID de transaction</b> reçu.</li>
+        </ol>
+        <a className="btn btn-secondary portail-ouvrir" href={operateur.lien} target="_blank" rel="noopener noreferrer"><Smartphone size={16} /><span>Je suis sur mon téléphone : ouvrir {operateur.mode}</span></a>
+        <Btn variant="brand" full icon={CheckCircle2} onClick={onPaye}>J'ai payé, saisir l'ID de transaction</Btn>
+        <p className="portail-securite"><ShieldCheck size={14} />Le paiement se fait dans l'application {operateur.mode}{domaine ? ` (${domaine})` : ""}. Ce site ne vous demande jamais votre code secret.</p>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

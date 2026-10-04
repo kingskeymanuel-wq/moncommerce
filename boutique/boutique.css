@@ -216,3 +216,22 @@ body.vitrine { background: var(--surface); scroll-behavior: smooth; }
 
 /* Lien de paiement de l'opérateur (page de commande) */
 .vitrine a.v-lien-paiement { display: inline-flex; align-items: center; gap: 8px; margin: 2px 0 8px; color: var(--primary-text); text-decoration: none; }
+
+/* ---------- Portail de paiement (QR code de l'opérateur) ---------- */
+.vitrine button.v-lien-paiement { display: inline-flex; align-items: center; gap: 8px; margin: 2px 0 8px; }
+.portail-fond { position: fixed; inset: 0; z-index: 200; background: rgba(10, 10, 10, .62); backdrop-filter: blur(4px); display: grid; place-items: center; padding: 16px; overflow-y: auto; animation: fadeIn .2s ease-out; }
+.portail { position: relative; width: 100%; max-width: 400px; background: var(--surface); color: var(--text); border-radius: 22px; padding: 26px 24px 20px; display: grid; gap: 14px; box-shadow: 0 30px 80px rgba(0, 0, 0, .45); animation: fadeUp .3s var(--ease-out); }
+.portail-fermer { position: absolute; top: 12px; right: 12px; width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--surface-2); color: var(--text-2); display: grid; place-items: center; cursor: pointer; }
+.portail-tete { display: flex; align-items: center; gap: 12px; }
+.portail-tete b { display: block; font-size: 17px; }
+.portail-tete small { color: var(--text-3); }
+.portail-montant { text-align: center; padding: 12px; border-radius: 14px; background: var(--surface-2); }
+.portail-montant small { display: block; color: var(--text-3); font-size: 12.5px; }
+.portail-montant strong { font-size: 28px; letter-spacing: -.6px; }
+.portail-qr { display: grid; place-items: center; padding: 12px; border-radius: 16px; background: #fff; border: 1px solid var(--border); justify-self: center; }
+.portail-qr .qr { display: block; }
+.portail-etapes { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 13.5px; color: var(--text-2); }
+.vitrine a.portail-ouvrir { justify-content: center; text-decoration: none; color: var(--text); }
+.portail-securite { display: flex; gap: 6px; align-items: flex-start; margin: 0; font-size: 12px; color: var(--text-3); }
+.portail-securite svg { flex-shrink: 0; margin-top: 1px; color: var(--c-green); }
+@keyframes fadeIn { from { opacity: 0; } }
