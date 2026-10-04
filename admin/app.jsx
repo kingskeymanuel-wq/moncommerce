@@ -249,6 +249,7 @@ function boutiqueParDefaut() {
     message: "Merci pour votre achat et à bientôt !",
     slogan: "", whatsapp: "",
     momo_orange: "", momo_mtn: "", momo_moov: "", momo_wave: "", momo_titulaire: "",
+    lien_orange: "", lien_mtn: "", lien_moov: "", lien_wave: "",
     frais_livraison: "0", livraison_gratuite_des: "0", zone_livraison: "", boutique_ouverte: "1",
   };
 }
@@ -4699,16 +4700,19 @@ function PageFinances({ route }) {
 /* ---------- Réglages de la boutique en ligne (site client) ---------- */
 function CarteBoutiqueEnLigne({ estAdmin }) {
   const { data, update, sync, toast } = useApp();
-  const CLES = ["boutique_ouverte", "slogan", "whatsapp", "frais_livraison", "livraison_gratuite_des", "zone_livraison", "momo_orange", "momo_mtn", "momo_moov", "momo_wave", "momo_titulaire"];
+  const CLES = ["boutique_ouverte", "slogan", "whatsapp", "frais_livraison", "livraison_gratuite_des", "zone_livraison", "momo_orange", "momo_mtn", "momo_moov", "momo_wave", "momo_titulaire", "lien_orange", "lien_mtn", "lien_moov", "lien_wave"];
   const depuis = () => Object.fromEntries(CLES.map((k) => [k, String(({ ...boutiqueParDefaut(), ...(data.boutique || {}) })[k] ?? "")]));
   const [f, setF] = useState(depuis);
   const [cinetpay, setCinetpay] = useState(null);
   useEffect(() => { setF(depuis()); }, [JSON.stringify(data.boutique)]);
   useEffect(() => { apiFetch("GET", "/api/boutique/config").then((c) => setCinetpay(c.paiements)).catch(() => setCinetpay(null)); }, []);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const numeros = [["momo_wave", "Wave", "lien_wave"], ["momo_orange", "Orange Money", "lien_orange"], ["momo_mtn", "MTN MoMo", "lien_mtn"], ["momo_moov", "Moov Money", "lien_moov"]];
   const modifie = CLES.some((k) => f[k] !== depuis()[k]);
   const lien = location.origin + "/";
   const enregistrer = async () => {
+    const mauvais = numeros.find(([, nom, l]) => f[l].trim() && !/^https:\/\/\S+\.\S+/.test(f[l].trim()));
+    if (mauvais) return toast({ title: `Lien ${mauvais[1]} invalide`, desc: "Collez l'adresse complète, qui commence par https://", tone: "critical" });
     const b = { ...f, frais_livraison: String(Number(f.frais_livraison) || 0), livraison_gratuite_des: String(Number(f.livraison_gratuite_des) || 0) };
     update((d) => ({ ...d, boutique: { ...d.boutique, ...b } }));
     if (await sync(["PUT", "/api/parametres", b])) {
@@ -4717,7 +4721,6 @@ function CarteBoutiqueEnLigne({ estAdmin }) {
     }
   };
   const ouverte = f.boutique_ouverte !== "0";
-  const numeros = [["momo_orange", "Orange Money"], ["momo_mtn", "MTN MoMo"], ["momo_moov", "Moov Money"], ["momo_wave", "Wave"]];
   return (
     <Card title="Boutique en ligne" sub="Le site où vos clients consultent le catalogue, commandent et paient.">
       <div className="stack">
@@ -4740,12 +4743,20 @@ function CarteBoutiqueEnLigne({ estAdmin }) {
         </div>
 
         <div>
-          <div className="strong">Paiement par transfert Mobile Money</div>
-          <p className="subtle" style={{ marginBottom: 10 }}>Le client envoie le montant sur votre numéro puis saisit l'ID de transaction. Vous confirmez la réception depuis la commande. Laissez vide pour ne pas proposer un opérateur.</p>
-          <div className="form-grid">
-            {numeros.map(([k, nom]) => (
-              <Field key={k} label={nom} optional><div className="row"><ModePaiement mode={nom} taille={28} /><div className="grow"><Input value={f[k]} onChange={(e) => set(k, e.target.value)} placeholder="Numéro marchand" inputMode="tel" disabled={!estAdmin} /></div></div></Field>
+          <div className="strong">Paiement Mobile Money : numéros et liens de paiement</div>
+          <p className="subtle" style={{ marginBottom: 10 }}>Pour chaque opérateur, indiquez votre numéro marchand et/ou votre lien de paiement. Le client paie par le lien ou sur le numéro, puis saisit l'ID de transaction ; vous confirmez la réception depuis la commande. Laissez vide pour ne pas proposer un opérateur.</p>
+          <div className="operateurs-paiement">
+            {numeros.map(([k, nom, l]) => (
+              <div key={k} className="operateur-paiement">
+                <div className="row"><ModePaiement mode={nom} taille={28} /><b>{nom}</b>{(f[k].trim() || f[l].trim()) ? <Badge tone="success" dot>Proposé aux clients</Badge> : <Badge>Non proposé</Badge>}</div>
+                <div className="form-grid">
+                  <Field label="Numéro marchand" optional><Input icon={Phone} value={f[k]} onChange={(e) => set(k, e.target.value)} placeholder="07 00 00 00 00" inputMode="tel" disabled={!estAdmin} /></Field>
+                  <Field label="Lien de paiement" optional><Input icon={Link2} value={f[l]} onChange={(e) => set(l, e.target.value)} placeholder="https://…" inputMode="url" autoCapitalize="none" disabled={!estAdmin} /></Field>
+                </div>
+              </div>
             ))}
+          </div>
+          <div className="form-grid" style={{ marginTop: 14 }}>
             <Field label="Nom affiché du titulaire" optional className="full" help="Le nom que le client voit sur son téléphone au moment du transfert."><Input value={f.momo_titulaire} onChange={(e) => set("momo_titulaire", e.target.value)} placeholder={data.boutique?.nom} disabled={!estAdmin} /></Field>
           </div>
         </div>

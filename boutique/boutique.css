@@ -213,3 +213,6 @@ body.vitrine { background: var(--surface); scroll-behavior: smooth; }
 /* ---------- v7 : catégories et lots ---------- */
 .v-categories { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
 .v-lot { align-self: flex-start; font-size: 11.5px; font-weight: 650; color: var(--info); background: var(--info-bg); border-radius: 99px; padding: 2px 9px; margin-bottom: 4px; }
+
+/* Lien de paiement de l'opérateur (page de commande) */
+.vitrine a.v-lien-paiement { display: inline-flex; align-items: center; gap: 8px; margin: 2px 0 8px; color: var(--primary-text); text-decoration: none; }

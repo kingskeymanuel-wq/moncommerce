@@ -66,6 +66,13 @@ Pour de vraies ventes, remplacez-les par les photos de vos propres produits
 Ces comptes sont publics : pour une utilisation réelle, mettez `DONNEES_TEST=0`
 (ou choisissez votre mot de passe avec `MOT_DE_PASSE_TEST`).
 
+## Liens de paiement des opérateurs
+
+Dans **Paramètres → Boutique en ligne**, l'administrateur de chaque boutique renseigne, pour Wave,
+Orange Money, MTN MoMo et Moov Money, son numéro marchand et/ou son **lien de paiement** (adresse https).
+À la commande, le client voit un bouton « Payer … avec Wave » qui ouvre ce lien, puis saisit l'ID de
+transaction ; la boutique confirme la réception depuis la commande.
+
 ## 2. La boutique en ligne
 
 Tout ce que voit le client vient de la base : produits actifs, photos, prix et

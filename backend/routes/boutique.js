@@ -34,10 +34,10 @@ const { prixEffectif, promoActive, remisePourcent } = require("../lib/prix");
 const router = express.Router();
 
 const OPERATEURS = [
-  { cle: "momo_orange", mode: "Orange Money" },
-  { cle: "momo_mtn", mode: "MTN MoMo" },
-  { cle: "momo_moov", mode: "Moov Money" },
-  { cle: "momo_wave", mode: "Wave" },
+  { cle: "momo_orange", lien: "lien_orange", mode: "Orange Money" },
+  { cle: "momo_mtn", lien: "lien_mtn", mode: "MTN MoMo" },
+  { cle: "momo_moov", lien: "lien_moov", mode: "Moov Money" },
+  { cle: "momo_wave", lien: "lien_wave", mode: "Wave" },
 ];
 const MAX_LIGNES = 30;
 const MAX_QTE = 50;
@@ -71,7 +71,8 @@ function configPublique() {
     livraison: { frais, gratuite_des: gratuite, zone: b.zone_livraison },
     paiements: {
       livraison: true,
-      transfert: OPERATEURS.filter((o) => String(b[o.cle] || "").trim()).map((o) => ({ mode: o.mode, numero: String(b[o.cle]).trim(), titulaire: b.momo_titulaire || b.nom })),
+      // Un opérateur est proposé dès que la boutique a renseigné son numéro ou son lien de paiement
+      transfert: OPERATEURS.filter((o) => String(b[o.cle] || "").trim() || String(b[o.lien] || "").trim()).map((o) => ({ mode: o.mode, numero: String(b[o.cle] || "").trim(), lien: String(b[o.lien] || "").trim(), titulaire: b.momo_titulaire || b.nom })),
       en_ligne: cinetpay.estConfigure(),
       en_ligne_test: cinetpay.estConfigure() && cinetpay.estBacASable(),
     },

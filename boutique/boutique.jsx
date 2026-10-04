@@ -529,7 +529,7 @@ function PageCommander() {
   const [c, setC] = useState({ nom: memo.nom || "", telephone: memo.telephone || "", email: memo.email || "", adresse: memo.adresse || "", ville: memo.ville || "", instructions: "" });
   const modes = [
     { cle: "livraison", titre: "Paiement à la livraison", desc: "Payez en espèces ou par Mobile Money au livreur.", icone: Banknote },
-    ...(config.paiements.transfert.length ? [{ cle: "transfert", titre: "Transfert Mobile Money", desc: "Envoyez le montant sur notre numéro, puis indiquez la référence.", icone: Smartphone }] : []),
+    ...(config.paiements.transfert.length ? [{ cle: "transfert", titre: "Transfert Mobile Money", desc: "Payez par le lien ou sur le numéro de la boutique, puis indiquez la référence.", icone: Smartphone }] : []),
     ...(config.paiements.en_ligne ? [{ cle: "en_ligne", titre: "Payer en ligne maintenant", desc: "Orange Money, MTN MoMo, Moov Money, Wave via CinetPay.", icone: CreditCard }] : []),
   ];
   const [mode, setMode] = useState(modes[0].cle);
@@ -659,7 +659,11 @@ function PageCommander() {
                 ))}
               </div>
               <ol className="v-instructions">
-                <li>Envoyez <b className="num">{fmt(t.total)}</b> par <b>{operateur.mode}</b> au <b className="num">{operateur.numero}</b> <button type="button" className="link" onClick={() => navigator.clipboard?.writeText(operateur.numero.replace(/\s/g, "")).then(() => toast({ titre: "Numéro copié" }))}><Copy size={12} /> copier</button><br /><span className="subtle">Titulaire : {operateur.titulaire}</span></li>
+                <li>
+                  {operateur.lien && <><a className="btn btn-primary v-lien-paiement" href={operateur.lien} target="_blank" rel="noopener noreferrer"><LogoOperateur mode={operateur.mode} taille={20} /><span>Payer {fmt(t.total)} avec {operateur.mode}</span></a><br /></>}
+                  {operateur.numero && <>{operateur.lien ? "ou envoyez" : "Envoyez"} <b className="num">{fmt(t.total)}</b> par <b>{operateur.mode}</b> au <b className="num">{operateur.numero}</b> <button type="button" className="link" onClick={() => navigator.clipboard?.writeText(operateur.numero.replace(/\s/g, "")).then(() => toast({ titre: "Numéro copié" }))}><Copy size={12} /> copier</button><br /></>}
+                  <span className="subtle">{operateur.lien && !operateur.numero ? `Le lien ouvre la page de paiement ${operateur.mode} · ` : ""}Titulaire : {operateur.titulaire}</span>
+                </li>
                 <li>Notez l'<b>ID de transaction</b> indiqué dans le SMS de confirmation.</li>
                 <li>Renseignez-le ci-dessous : nous vérifions la réception puis confirmons votre commande.</li>
               </ol>
