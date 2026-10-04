@@ -233,8 +233,8 @@ router.post("/commandes", limiteCommandes, espacePublic, async (req, res) => {
           champsPaiement.reference || null, champsPaiement.telephone || null, maintenant);
       }
       db.prepare(
-        `INSERT INTO commandes (id, vente_id, numero, statut, adresse_livraison, note, jeton_recu, canal, frais_livraison, contact_telephone, contact_email, maj_le)
-         VALUES (?, ?, ?, 'en_attente', ?, ?, ?, 'en_ligne', ?, ?, ?, ?)`
+        `INSERT INTO commandes (id, vente_id, numero, statut, adresse_livraison, note, jeton_recu, canal, frais_livraison, contact_telephone, contact_email, maj_le, livraison)
+         VALUES (?, ?, ?, 'en_attente', ?, ?, ?, 'en_ligne', ?, ?, ?, ?, 1)`
       ).run(commandeId, venteIds[0], numero, [client.adresse, client.ville].filter(Boolean).join(", "), client.instructions || null,
         jeton, frais, client.telephone, client.email || null, maintenant);
       ajouterEvenement(commandeId, { statut: "en_attente", texte: "Commande passée sur la boutique en ligne", date: maintenant });

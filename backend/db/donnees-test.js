@@ -71,7 +71,7 @@ const ESPACES = [
     ],
     ventes: [
       [9, 0, 0, 1, 1, { mode: "Orange Money" }], [7, 1, 8, 3, 1], [6, 2, 6, 2, 0], [4, 0, 2, 1, 1, { mode: "Wave" }], [3, 1, 11, 1, 1],
-      [5, 3, 8, 10, 1, { b2b: true, mode: "Wave" }], [2, 2, 9, 2, 1, { nonRemis: true }], [1, 0, 3, 1, 1, { enLigne: true, statut: "confirmee" }], [0, 1, 6, 1, null, { enLigne: true, statut: "en_attente" }],
+      [5, 3, 8, 10, 1, { b2b: true, mode: "Wave" }], [2, 2, 9, 2, 1, { nonRemis: true }], [3, 1, 12, 2, null, { enLigne: true, statut: "livree" }], [1, 2, 4, 1, null, { enLigne: true, statut: "expediee" }], [1, 0, 3, 1, 1, { enLigne: true, statut: "confirmee" }], [0, 1, 6, 1, null, { enLigne: true, statut: "en_attente" }],
     ],
   },
   {
@@ -163,7 +163,16 @@ const ESPACES = [
   },
 ];
 
-function remplir(e, utilisateurs) {
+/* Livreurs de démonstration (les mêmes profils dans chaque boutique, numéros distincts) */
+const LIVREURS = [{ nom: "Moussa Traoré (moto)", zone: "Cocody, Riviera, Bingerville" }, { nom: "Serge Kouakou (moto)", zone: "Yopougon, Adjamé, Abobo" }];
+
+function remplir(e, utilisateurs, rang) {
+  const livreurs = LIVREURS.map((l, i) => {
+    const id = nanoid();
+    db.prepare("INSERT INTO livreurs (id, nom, telephone, zone, actif, supprime, cree_le) VALUES (?, ?, ?, ?, 1, 0, ?)").run(id, l.nom, `05000009${rang}${i + 1}`, l.zone, jours(20));
+    return id;
+  });
+  let colis = 0;
   const packs = e.produits.map((p, i) => {
     const id = nanoid();
     db.prepare(
@@ -197,6 +206,13 @@ function remplir(e, utilisateurs) {
       `INSERT INTO commandes (id, vente_id, numero, statut, adresse_livraison, jeton_recu, canal, frais_livraison, contact_telephone, type_vente, maj_le)
        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
     ).run(cmdId, venteId, numero, statut, c.ville, nanoid(24), o.enLigne ? "en_ligne" : "boutique", c.telephone, o.b2b ? "b2b" : "b2c", date);
+    // Commandes en ligne : colis à livrer. Dès qu'elles sont confirmées, un livreur et une date sont prévus.
+    if (o.enLigne) {
+      const frais = Number(e.reglages.frais_livraison) || 0;
+      const affecte = statut !== "en_attente";
+      db.prepare("UPDATE commandes SET livraison = 1, frais_livraison = ?, livreur_id = ?, livraison_prevue = ?, livree_le = ? WHERE id = ?")
+        .run(frais, affecte ? livreurs[colis++ % livreurs.length] : null, affecte ? new Date(Date.now() + (statut === "livree" ? -1 : 1) * 864e5).toISOString().slice(0, 10) : null, statut === "livree" ? date : null, cmdId);
+    }
     // Chaque vente a son ticket ; « nonRemis » simule un ticket que le vendeur n'a pas encore remis au client
     genererTicket(cmdId, vendeur?.id || null, date);
     if (!o.nonRemis) journaliser(cmdId, o.enLigne ? "consulte_client" : o.mode ? "whatsapp" : "imprime", o.enLigne ? null : vendeur?.id || null, { evenement: false, date });
@@ -214,7 +230,7 @@ function installer({ creerEspace, creerUtilisateur, ecrireBoutique }) {
     db.dansEspace(boutique.id, () => {
       ecrireBoutique(e.reglages);
       const vendeurs = e.vendeurs.map((v) => creerUtilisateur({ ...v, mot_de_passe: MOT_DE_PASSE, role: "vendeur" }));
-      db.transaction(() => remplir(e, [utilisateur, ...vendeurs]))();
+      db.transaction(() => remplir(e, [utilisateur, ...vendeurs], ESPACES.indexOf(e) + 1))();
     });
   }
   db.reglages.ecrire("donnees_test", "1");

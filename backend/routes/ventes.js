@@ -85,9 +85,10 @@ router.post("/", (req, res) => {
 
 
     db.prepare(
-      `INSERT INTO commandes (id, vente_id, numero, statut, adresse_livraison, jeton_recu, frais_livraison, type_vente, contact_telephone, maj_le)
-       VALUES (?, ?, ?, 'en_attente', ?, ?, ?, ?, ?, ?)`
-    ).run(commandeId, venteId, numero, adresse_livraison ?? client.ville ?? "", nanoid(24), frais, typeVente, client.telephone || null, maintenant);
+      `INSERT INTO commandes (id, vente_id, numero, statut, adresse_livraison, jeton_recu, frais_livraison, type_vente, contact_telephone, livraison, maj_le)
+       VALUES (?, ?, ?, 'en_attente', ?, ?, ?, ?, ?, ?, ?)`
+    ).run(commandeId, venteId, numero, adresse_livraison ?? client.ville ?? "", nanoid(24), frais, typeVente, client.telephone || null,
+      req.body.livraison === true || frais > 0 ? 1 : 0, maintenant); // livraison : colis à livrer (sinon retrait sur place)
     genererTicket(commandeId, req.user?.id, maintenant);
     mouvement(pack_id, -qte, "vente", { reference: numero, auteurId: req.user?.id });
     ajouterEvenement(commandeId, { statut: "en_attente", auteurId: req.user?.id, date: maintenant });

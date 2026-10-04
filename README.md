@@ -179,6 +179,22 @@ ou les désactive.
 - **Ticket = étiquette de colis** : il porte le contact du client, l'adresse et le
   montant de la livraison. « Monnaie rendue » n'apparaît que s'il y en a eu.
 
+### Suivi des livraisons
+Page **Livraisons** : chaque commande en ligne et chaque vente avec l'option
+« Livraison » est un colis suivi de la boutique jusqu'au client.
+- Onglets *À préparer*, *En livraison*, *En retard*, *Livrés* ; recherche par
+  téléphone, lieu ou article ; filtre par livreur.
+- **Livreurs** (créés par l'administrateur) : chaque colis est confié à un livreur
+  avec une date prévue, un par un ou plusieurs à la fois.
+- **Départ → Livré** : un colis payable à la livraison est encaissé au moment où
+  il est marqué livré. **Échec** (client absent, injoignable…) : le colis revient
+  « à préparer », la tentative est comptée, la vente et le stock ne bougent pas.
+- **Feuille de route** par livreur (adresses, contacts, montants à encaisser) :
+  à imprimer, copier ou envoyer au livreur par WhatsApp. Un bouton prévient le
+  client par WhatsApp (livreur, date, montant à régler).
+- Indicateurs : colis à préparer, en cours, livrés du jour, argent à encaisser,
+  frais de livraison perçus, et tableau par livreur.
+
 ### Enregistrer une vente
 Contact (téléphone), nom facultatif, adresse, ville → catégorie → clic sur
 l'article → quantité. Options : **livraison** (frais ajoutés au ticket) et **vente

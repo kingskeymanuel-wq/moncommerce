@@ -32,7 +32,9 @@ function ouvrirEspace(fichier) {
   // Migrations : ajoute les colonnes apparues après la v1 aux bases existantes
   function ajouterColonne(table, colonne, definition) {
     const colonnes = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
-    if (!colonnes.includes(colonne)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${colonne} ${definition}`);
+    if (colonnes.includes(colonne)) return false;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${colonne} ${definition}`);
+    return true;
   }
   ajouterColonne("clients", "supprime", "INTEGER NOT NULL DEFAULT 0");
   ajouterColonne("packs", "cout", "REAL");
@@ -80,6 +82,18 @@ function ouvrirEspace(fichier) {
     id TEXT PRIMARY KEY, commande_id TEXT NOT NULL REFERENCES commandes(id) ON DELETE CASCADE,
     action TEXT NOT NULL, auteur_id TEXT, cree_le TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_tickets_commande ON tickets_journal(commande_id);`);
+
+  // v8 : suivi des livraisons — colis à livrer, livreur, date prévue, tentatives
+  db.exec(`CREATE TABLE IF NOT EXISTS livreurs (
+    id TEXT PRIMARY KEY, nom TEXT NOT NULL, telephone TEXT NOT NULL, zone TEXT,
+    actif INTEGER NOT NULL DEFAULT 1, supprime INTEGER NOT NULL DEFAULT 0, cree_le TEXT NOT NULL);`);
+  const nouvelleColonneLivraison = ajouterColonne("commandes", "livraison", "INTEGER NOT NULL DEFAULT 0"); // 1 = colis à livrer, 0 = retrait sur place
+  ajouterColonne("commandes", "livreur_id", "TEXT");
+  ajouterColonne("commandes", "livraison_prevue", "TEXT");                    // date prévue (AAAA-MM-JJ)
+  ajouterColonne("commandes", "livraison_tentatives", "INTEGER NOT NULL DEFAULT 0"); // échecs de livraison
+  ajouterColonne("commandes", "livree_le", "TEXT");
+  // Commandes antérieures : en ligne ou avec frais de livraison = colis à livrer
+  if (nouvelleColonneLivraison) db.exec("UPDATE commandes SET livraison = 1 WHERE canal = 'en_ligne' OR frais_livraison > 0");
 
   // Anciens libellés de paiement → libellés actuels
   db.prepare("UPDATE ventes SET mode_paiement = 'Carte bancaire' WHERE mode_paiement = 'Carte'").run();

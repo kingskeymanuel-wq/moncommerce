@@ -44,6 +44,7 @@ router.get("/", (req, res) => {
       .all()
       .filter((e) => idsCommandes.has(e.commande_id))
       .map((e) => ({ ...e, cree_le: versIso(e.cree_le) })),
+    livreurs: db.prepare("SELECT * FROM livreurs WHERE supprime = 0 ORDER BY nom").all().map((l) => ({ ...l, cree_le: versIso(l.cree_le) })),
     // Journal des tickets de caisse (générés, imprimés, envoyés…) des commandes visibles
     tickets: db.prepare("SELECT id, commande_id, action, auteur_id, cree_le FROM tickets_journal ORDER BY cree_le").all()
       .filter((t) => idsCommandes.has(t.commande_id)).map((t) => ({ ...t, cree_le: versIso(t.cree_le) })),
@@ -67,7 +68,7 @@ router.post("/import", adminOnly, (req, res) => {
 
   try {
     db.transaction(() => {
-      db.exec("DELETE FROM tickets_journal; DELETE FROM paiements_en_ligne; DELETE FROM commande_evenements; DELETE FROM commandes; DELETE FROM ventes; DELETE FROM packs; DELETE FROM clients; DELETE FROM investissements;");
+      db.exec("DELETE FROM livreurs; DELETE FROM tickets_journal; DELETE FROM paiements_en_ligne; DELETE FROM commande_evenements; DELETE FROM commandes; DELETE FROM ventes; DELETE FROM packs; DELETE FROM clients; DELETE FROM investissements;");
 
       const insClient = db.prepare("INSERT INTO clients (id, nom, telephone, email, ville, statut, notes, supprime, cree_le, consentement_marketing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
       const insPack = db.prepare("INSERT INTO packs (id, nom, description, prix, cout, stock, sku, emoji, teinte, actif, supprime, cree_le, image, contenu, prix_promo, promo_fin, seuil_alerte) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
@@ -143,6 +144,11 @@ router.post("/import", adminOnly, (req, res) => {
       for (const c of d.commandes) if (cmdIds.has(c.id)) majCmd.run(c.numero_ticket || null, c.type_vente === "b2b" ? "b2b" : "b2c", c.ticket_remis_le || null, c.id);
       const insTicket = db.prepare("INSERT INTO tickets_journal (id, commande_id, action, auteur_id, cree_le) VALUES (?, ?, ?, NULL, ?)");
       for (const t of d.tickets || []) if (cmdIds.has(t.commande_id)) insTicket.run(nanoid(), t.commande_id, String(t.action || "genere").slice(0, 30), t.cree_le || maintenant);
+      const insLivreur = db.prepare("INSERT INTO livreurs (id, nom, telephone, zone, actif, supprime, cree_le) VALUES (?, ?, ?, ?, ?, 0, ?)");
+      const livreurIds = new Set();
+      for (const l of d.livreurs || []) { const id = idOuNouveau(l.id); insLivreur.run(id, l.nom || "Livreur", l.telephone || "", l.zone || null, l.actif === 0 || l.actif === false ? 0 : 1, l.cree_le || maintenant); livreurIds.add(id); }
+      const majLivraison = db.prepare("UPDATE commandes SET livraison = ?, livreur_id = ?, livraison_prevue = ?, livraison_tentatives = ?, livree_le = ? WHERE id = ?");
+      for (const c of d.commandes) if (cmdIds.has(c.id)) majLivraison.run(c.livraison ?? (c.canal === "en_ligne" || Number(c.frais_livraison) > 0) ? 1 : 0, livreurIds.has(c.livreur_id) ? c.livreur_id : null, c.livraison_prevue || null, Math.max(0, Math.round(Number(c.livraison_tentatives) || 0)), c.livree_le || null, c.id);
       numeroterManquants(); // commandes d'une sauvegarde plus ancienne
       if (d.boutique && typeof d.boutique === "object") ecrireBoutique(d.boutique);
     })();

@@ -1497,3 +1497,17 @@ div.prix-barre { margin-left: 0; }
 /* ---------- v7 : tickets, liste des commandes ---------- */
 .badge-inline { margin-left: 6px; vertical-align: middle; }
 .table td .cell-sub .badge { margin-top: 2px; }
+
+/* ---------- v8 : livraisons ---------- */
+.date-compacte { width: 140px; height: 32px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
+.date-compacte.retard { border-color: var(--critical-solid); color: var(--critical-solid); }
+.table-livraisons .select { height: 32px; font-size: 13px; }
+.bulk-livraison { flex-wrap: wrap; gap: 8px; height: auto; min-height: 44px; padding-block: 6px; }
+.feuille { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--surface-2); }
+.feuille ol { margin: 12px 0 0; padding-left: 22px; display: grid; gap: 12px; }
+.feuille-impression { display: none; }
+@media print {
+  .print-zone.feuille-impression { display: block; width: auto; color: #000; font-family: Arial, sans-serif; }
+  .print-zone.feuille-impression h2 { font-size: 16px; margin: 0 0 8px; }
+  .print-zone.feuille-impression pre { white-space: pre-wrap; font: 12px/1.5 Arial, sans-serif; margin: 0; }
+}

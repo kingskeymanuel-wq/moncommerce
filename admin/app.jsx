@@ -371,6 +371,7 @@ function depuisServeur(p) {
     packs: p.packs.map((x) => ({ id: x.id, nom: x.nom, desc: x.description || "", prix: x.prix, cout: x.cout ?? null, stock: x.stock, sku: x.sku || "", emoji: x.emoji || "📦", teinte: x.teinte ?? 0, actif: !!x.actif, image: x.image || null,
       contenu: x.contenu || "", prixPromo: x.prix_promo ?? null, promoFin: x.promo_fin || null, seuilAlerte: x.seuil_alerte ?? STOCK_FAIBLE,
       categorie: x.categorie || "", pieces: Math.max(1, Number(x.pieces_par_lot) || 1) })),
+    livreurs: (p.livreurs || []).map((l) => ({ id: l.id, nom: l.nom, tel: l.telephone || "", zone: l.zone || "", actif: l.actif !== 0 })),
     // Journal des tickets de caisse : généré, imprimé, envoyé…
     tickets: (p.tickets || []).map((t) => ({ id: t.id, commandeId: t.commande_id, action: t.action, auteurId: t.auteur_id || null, date: t.cree_le })),
     ventes,
@@ -380,6 +381,8 @@ function depuisServeur(p) {
         id: c.id, venteId: c.vente_id, numero: c.numero, statut: c.statut, adresseLivraison: c.adresse_livraison || "", note: c.note || "", jetonRecu: c.jeton_recu || null,
         canal: c.canal || "boutique", fraisLivraison: Number(c.frais_livraison) || 0, contactTel: c.contact_telephone || "", contactEmail: c.contact_email || "",
         numeroTicket: c.numero_ticket || null, typeVente: c.type_vente || "b2c", ticketRemisLe: c.ticket_remis_le || null,
+        // Livraison : colis à livrer (sinon retrait sur place), livreur, date prévue, échecs
+        livraison: !!c.livraison, livreurId: c.livreur_id || null, livraisonPrevue: c.livraison_prevue || null, tentatives: c.livraison_tentatives || 0, livreeLe: c.livree_le || null,
         historique: h.length ? h : [{ statut: c.statut, date: venteDate.get(c.vente_id) || c.maj_le }],
       };
     }),
@@ -409,7 +412,9 @@ function versServeur(d) {
       statut_paiement: v.statutPaiement || "payee", montant_recu: v.montantRecu ?? null, reference_paiement: v.reference || null, telephone_paiement: v.telPaiement || null })),
     commandes: d.commandes.map((c) => ({ id: c.id, vente_id: c.venteId, numero: c.numero, statut: c.statut, adresse_livraison: c.adresseLivraison || "", note: c.note || "", jeton_recu: c.jetonRecu || null,
       canal: c.canal || "boutique", frais_livraison: c.fraisLivraison || 0, contact_telephone: c.contactTel || null, contact_email: c.contactEmail || null,
-      numero_ticket: c.numeroTicket || null, type_vente: c.typeVente || "b2c", ticket_remis_le: c.ticketRemisLe || null })),
+      numero_ticket: c.numeroTicket || null, type_vente: c.typeVente || "b2c", ticket_remis_le: c.ticketRemisLe || null,
+      livraison: c.livraison ? 1 : 0, livreur_id: c.livreurId || null, livraison_prevue: c.livraisonPrevue || null, livraison_tentatives: c.tentatives || 0, livree_le: c.livreeLe || null })),
+    livreurs: (d.livreurs || []).map((l) => ({ id: l.id, nom: l.nom, telephone: l.tel, zone: l.zone || null, actif: l.actif === false ? 0 : 1 })),
     tickets: (d.tickets || []).map((t) => ({ commande_id: t.commandeId, action: t.action, cree_le: t.date })),
     evenements: d.commandes.flatMap((c) => (c.historique || []).map((e) => ({ commande_id: c.id, type: e.type || "statut", statut: e.statut || null, texte: e.texte || null, cree_le: new Date(e.date).toISOString() }))),
     investissements: d.investissements.map((i) => ({ id: i.id, ...investVersServeur(i) })),
@@ -1185,6 +1190,7 @@ function GroupedBars({ groups, series }) {
 const NAV = [
   { key: "accueil", label: "Accueil", icon: Home },
   { key: "commandes", label: "Commandes", icon: ShoppingCart, badge: (d) => d.commandes.filter((c) => c.statut === "en_attente").length },
+  { key: "livraisons", label: "Livraisons", icon: Truck, badge: (d) => d.commandes.filter((c) => c.livraison && !["livree", "annulee"].includes(c.statut)).length },
   { key: "produits", label: "Produits", icon: Tag },
   { key: "stocks", label: "Stocks", icon: Boxes, admin: true, badge: (d) => d.packs.filter((p) => p.actif !== false && p.stock <= seuilDe(p)).length },
   { key: "clients", label: "Clients", icon: Users },
@@ -1283,7 +1289,7 @@ function SidebarNav({ onNavigate }) {
       })}
       <div className="nav-spacer" />
       <a href="#/parametres" className={cx("nav-item", route.page === "parametres" && "active")} onClick={onNavigate}><Settings size={18} /><span>Paramètres</span></a>
-      <div className="nav-foot">Ivoire Shop · v7.0</div>
+      <div className="nav-foot">Ivoire Shop · v8.0</div>
     </nav>
   );
 }
@@ -1760,13 +1766,13 @@ function SaleModal({ open, preset, onClose }) {
         clients: newClient ? [...d.clients, newClient] : d.clients,
         ventes: [...d.ventes, { id: venteId, commandeId: cmdId, clientId: cl.id, packId: pack.id, vendeurId: d.moi || null, qte, prixUnitaire: prixU, date: isoDate(now), heure: hhmm(now), vendeur: auth?.utilisateur?.nom || "", ...paiementLocal(pay, total) }],
         packs: d.packs.map((p) => (p.id === pack.id ? { ...p, stock: Math.max(0, p.stock - qte) } : p)),
-        commandes: [...d.commandes, { id: cmdId, venteId, numero: nextNumero(d), numeroTicket: nextTicket(d), typeVente: b2b ? "b2b" : "b2c", ticketRemisLe: null, statut: "en_attente", adresseLivraison: adresseComplete || cl.ville || "", contactTel: c.tel.trim(), note: "", canal: "boutique", fraisLivraison: montantFrais, historique: [{ statut: "en_attente", date: now.toISOString() }] }],
+        commandes: [...d.commandes, { id: cmdId, venteId, numero: nextNumero(d), numeroTicket: nextTicket(d), typeVente: b2b ? "b2b" : "b2c", ticketRemisLe: null, statut: "en_attente", adresseLivraison: adresseComplete || cl.ville || "", contactTel: c.tel.trim(), note: "", canal: "boutique", fraisLivraison: montantFrais, livraison, livreurId: null, livraisonPrevue: null, tentatives: 0, historique: [{ statut: "en_attente", date: now.toISOString() }] }],
         tickets: [...(d.tickets || []), { id: uid(), commandeId: cmdId, action: "genere", auteurId: d.moi || null, date: now.toISOString() }],
       }));
       // Connecté au serveur : on attend sa confirmation (stock vérifié, numéro de ticket attribué)
       const res = await sync(
         ...(newClient ? [["POST", "/api/clients", { id: newClient.id, ...clientVersServeur(newClient) }]] : []),
-        ["POST", "/api/ventes", { id: venteId, commande_id: cmdId, client_id: cl.id, pack_id: pack.id, quantite: qte, adresse_livraison: adresseComplete || cl.ville || "", frais_livraison: montantFrais, type_vente: b2b ? "b2b" : "b2c", ...paiementVersServeur(pay, total) }],
+        ["POST", "/api/ventes", { id: venteId, commande_id: cmdId, client_id: cl.id, pack_id: pack.id, quantite: qte, adresse_livraison: adresseComplete || cl.ville || "", frais_livraison: montantFrais, livraison, type_vente: b2b ? "b2b" : "b2c", ...paiementVersServeur(pay, total) }],
       );
       setSaving(false); setApercu(false);
       if (!res) return; // erreur déjà signalée, données rechargées depuis le serveur
@@ -1896,7 +1902,7 @@ function SaleModal({ open, preset, onClose }) {
           ) : <div className="subtle" style={{ padding: "8px 0" }}>Cliquez sur un article</div>}
 
           <div className="row-between">
-            <div><div className="strong">Livraison</div><div className="subtle">{livraison ? "Le montant figure sur le ticket" : "Retrait sur place"}</div></div>
+            <div><div className="strong">Livraison</div><div className="subtle">{livraison ? "Colis suivi dans Livraisons ; montant sur le ticket" : "Retrait sur place"}</div></div>
             <Switch on={livraison} onChange={basculerLivraison} label="Livraison" />
           </div>
           {livraison && <Field label="Frais de livraison"><Input value={frais} onChange={(e) => setFrais(e.target.value.replace(/[^\d]/g, ""))} suffix="FCFA" inputMode="numeric" placeholder="0" /></Field>}
@@ -2610,6 +2616,7 @@ function PageCommande({ id }) {
           <MoreMenu items={[
             c.statut === "annulee" && { label: "Rétablir la commande", icon: RotateCcw, onClick: () => setStatut("en_attente") },
             c.statut !== "annulee" && { label: "Annuler la commande", icon: XCircle, onClick: cancel },
+            c.statut !== "annulee" && c.statut !== "livree" && { label: c.livraison ? "Passer en retrait sur place" : "Passer en livraison", icon: Truck, onClick: () => { patch(() => ({ livraison: !c.livraison })); sync(["PATCH", `/api/commandes/${c.id}/livraison`, { livraison: !c.livraison }]); } },
             ...(estAdmin ? ["sep", { label: "Supprimer", icon: Trash2, tone: "critical", onClick: remove }] : []),
           ]} />
         </>}
@@ -3573,6 +3580,361 @@ function PageTickets({ route }) {
         )}
         <Pager pg={pg} />
       </div>
+    </>
+  );
+}
+
+/* =====================================================================
+   PAGE : Livraisons — suivi des colis, du départ de la boutique à la remise au client
+   Colis à préparer → en cours de livraison → livré (ou échec : le colis revient).
+   ===================================================================== */
+const MOTIFS_ECHEC = ["Client absent", "Client injoignable", "Adresse introuvable", "Colis refusé", "Reporté par le client"];
+const aEncaisser = (c) => (c.vente?.statutPaiement && c.vente.statutPaiement !== "payee" ? c.total : 0);
+
+function LivreursModal({ open, onClose }) {
+  const { data, update, sync, toast, confirm } = useApp();
+  const vide = { id: null, nom: "", tel: "", zone: "" };
+  const [f, setF] = useState(vide);
+  const [err, setErr] = useState("");
+  useEffect(() => { if (open) { setF(vide); setErr(""); } }, [open]);
+  const livreurs = data.livreurs || [];
+  const enregistrer = () => {
+    if (!f.nom.trim() || f.tel.replace(/\D/g, "").length < 8) return setErr("Nom et numéro de téléphone requis.");
+    const propre = { nom: f.nom.trim(), tel: f.tel.trim(), zone: f.zone.trim() };
+    if (f.id) {
+      update((d) => ({ ...d, livreurs: d.livreurs.map((l) => (l.id === f.id ? { ...l, ...propre } : l)) }));
+      sync(["PUT", `/api/livreurs/${f.id}`, { nom: propre.nom, telephone: propre.tel, zone: propre.zone }]);
+    } else {
+      const id = uid();
+      update((d) => ({ ...d, livreurs: [...(d.livreurs || []), { id, ...propre, actif: true }] }));
+      sync(["POST", "/api/livreurs", { id, nom: propre.nom, telephone: propre.tel, zone: propre.zone }]);
+    }
+    toast({ title: f.id ? "Livreur mis à jour" : "Livreur ajouté", desc: propre.nom });
+    setF(vide); setErr("");
+  };
+  const basculer = (l) => {
+    update((d) => ({ ...d, livreurs: d.livreurs.map((x) => (x.id === l.id ? { ...x, actif: !l.actif } : x)) }));
+    sync(["PUT", `/api/livreurs/${l.id}`, { actif: !l.actif }]);
+  };
+  const retirer = async (l) => {
+    if (!(await confirm({ title: `Retirer ${l.nom} ?`, message: "Ses colis en cours seront à confier à un autre livreur. Ses livraisons passées restent dans l'historique.", confirmLabel: "Retirer", tone: "critical" }))) return;
+    update((d) => ({ ...d, livreurs: d.livreurs.filter((x) => x.id !== l.id), commandes: d.commandes.map((c) => (c.livreurId === l.id && !["livree", "annulee"].includes(c.statut) ? { ...c, livreurId: null } : c)) }));
+    sync(["DELETE", `/api/livreurs/${l.id}`]);
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Livreurs" size="lg" footer={<Btn onClick={onClose}>Fermer</Btn>}>
+      <div className="stack">
+        {livreurs.length === 0 ? <p className="subtle">Aucun livreur pour le moment. Ajoutez vos livreurs (coursiers, motos, société de livraison) pour leur confier des colis.</p> : (
+          <div className="list">
+            {livreurs.map((l) => (
+              <div key={l.id} className="list-item" style={{ opacity: l.actif ? 1 : 0.55 }}>
+                <Avatar name={l.nom} size="sm" />
+                <div className="grow"><div className="strong">{l.nom}{!l.actif && " (inactif)"}</div><div className="subtle">{l.tel}{l.zone ? " · " + l.zone : ""}</div></div>
+                <button className="icon-btn" title="Modifier" aria-label={`Modifier ${l.nom}`} onClick={() => { setF({ id: l.id, nom: l.nom, tel: l.tel, zone: l.zone || "" }); setErr(""); }}><Pencil size={14} /></button>
+                <button className="icon-btn" title={l.actif ? "Désactiver" : "Réactiver"} aria-label={l.actif ? `Désactiver ${l.nom}` : `Réactiver ${l.nom}`} onClick={() => basculer(l)}>{l.actif ? <EyeOff size={14} /> : <Eye size={14} />}</button>
+                <button className="icon-btn danger" title="Retirer" aria-label={`Retirer ${l.nom}`} onClick={() => retirer(l)}><Trash2 size={14} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="card" style={{ padding: 14, boxShadow: "none", border: "1px solid var(--border)" }}>
+          <div className="strong" style={{ marginBottom: 10 }}>{f.id ? "Modifier le livreur" : "Ajouter un livreur"}</div>
+          <div className="form-grid">
+            <Field label="Nom"><Input icon={User} value={f.nom} onChange={(e) => setF({ ...f, nom: e.target.value })} placeholder="Ex : Moussa Traoré" /></Field>
+            <Field label="Téléphone"><Input icon={Phone} value={f.tel} onChange={(e) => setF({ ...f, tel: e.target.value })} placeholder="05 00 00 00 00" inputMode="tel" /></Field>
+            <Field label="Zone couverte" optional className="full"><Input icon={MapPin} value={f.zone} onChange={(e) => setF({ ...f, zone: e.target.value })} placeholder="Ex : Cocody, Riviera, Bingerville" /></Field>
+          </div>
+          {err && <div className="field-error" style={{ marginTop: 8 }}><AlertCircle size={14} />{err}</div>}
+          <div className="row" style={{ justifyContent: "flex-end", marginTop: 12 }}>
+            {f.id && <Btn onClick={() => setF(vide)}>Annuler</Btn>}
+            <Btn variant="primary" icon={f.id ? Check : Plus} onClick={enregistrer}>{f.id ? "Enregistrer" : "Ajouter le livreur"}</Btn>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* Feuille de route d'un livreur : ses colis, adresses, contacts et montants à encaisser */
+function FeuilleRouteModal({ open, onClose, colis, livreurId }) {
+  const { data, toast } = useApp();
+  const [id, setId] = useState("");
+  useEffect(() => { if (open) setId(livreurId || ""); }, [open, livreurId]);
+  const livreurs = (data.livreurs || []).filter((l) => colis.some((c) => c.livreurId === l.id));
+  const livreur = (data.livreurs || []).find((l) => l.id === id) || livreurs[0];
+  const liste = colis.filter((c) => livreur && c.livreurId === livreur.id).sort((a, b) => (a.adresseLivraison || "").localeCompare(b.adresseLivraison || "", "fr"));
+  const total = liste.reduce((s, c) => s + aEncaisser(c), 0);
+  const texte = livreur ? [
+    `${data.boutique?.nom || "Boutique"} — feuille de route du ${fmtDate(isoDate(new Date()))}`,
+    `Livreur : ${livreur.nom} · ${liste.length} colis · à encaisser : ${fmt(total)}`,
+    "",
+    ...liste.map((c, i) => `${i + 1}. ${c.adresseLivraison || "Adresse à préciser"}\n   ${c.client?.nom && !/^Client \d/.test(c.client.nom) ? c.client.nom + " · " : ""}${c.contactTel || c.client?.tel || ""}\n   ${c.lignes.map((l) => `${l.pack?.nom || "Article"} × ${l.qte}`).join(", ")}\n   ${aEncaisser(c) ? "À encaisser : " + fmt(aEncaisser(c)) : "Déjà payé"} · ${c.numeroTicket || c.numero}`),
+  ].join("\n") : "";
+  return (
+    <Modal open={open} onClose={onClose} title="Feuille de route" size="lg"
+      footer={livreur && liste.length > 0 && <>
+        <Btn icon={Copy} onClick={() => navigator.clipboard?.writeText(texte).then(() => toast({ title: "Feuille de route copiée" }), () => toast({ title: "Copie impossible", tone: "critical" }))}>Copier</Btn>
+        <Btn icon={Printer} onClick={() => window.print()}>Imprimer</Btn>
+        <Btn variant="primary" icon={MessageSquare} onClick={() => window.open(`https://wa.me/${telInternational(livreur.tel)}?text=${encodeURIComponent(texte)}`, "_blank", "noopener")}>Envoyer au livreur (WhatsApp)</Btn>
+      </>}>
+      {livreurs.length === 0 ? <EmptyState icon={Truck} title="Aucun colis confié à un livreur">Confiez d'abord des colis à un livreur.</EmptyState> : (
+        <div className="stack">
+          <Field label="Livreur"><Select value={livreur?.id || ""} onChange={(e) => setId(e.target.value)}>{livreurs.map((l) => <option key={l.id} value={l.id}>{l.nom} — {colis.filter((c) => c.livreurId === l.id).length} colis</option>)}</Select></Field>
+          <div className="feuille">
+            <div className="row-between" style={{ flexWrap: "wrap" }}><strong>{livreur.nom} · {livreur.tel}</strong><span>{liste.length} colis · à encaisser <b className="num">{fmt(total)}</b></span></div>
+            <ol>
+              {liste.map((c) => (
+                <li key={c.id}>
+                  <div className="strong">{c.adresseLivraison || "Adresse à préciser"}</div>
+                  <div>{c.client?.nom && !/^Client \d/.test(c.client.nom) ? c.client.nom + " · " : ""}<span className="num">{c.contactTel || c.client?.tel}</span></div>
+                  <div className="subtle">{c.lignes.map((l) => `${l.pack?.nom || "Article"} × ${l.qte}`).join(", ")} · {c.numeroTicket || c.numero}</div>
+                  <div className="strong">{aEncaisser(c) ? `À encaisser : ${fmt(aEncaisser(c))}` : "Déjà payé"}</div>
+                </li>
+              ))}
+            </ol>
+          </div>
+          {createPortal(<div className="print-zone feuille-impression"><h2>{data.boutique?.nom} — feuille de route</h2><pre>{texte.split("\n").slice(1).join("\n")}</pre></div>, document.body)}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function EchecLivraisonModal({ cmd, onClose, onValider }) {
+  const [motif, setMotif] = useState(MOTIFS_ECHEC[0]);
+  const [autre, setAutre] = useState("");
+  useEffect(() => { setMotif(MOTIFS_ECHEC[0]); setAutre(""); }, [cmd?.id]);
+  return (
+    <Modal open={!!cmd} onClose={onClose} title="Livraison non aboutie" size="sm"
+      footer={<><Btn onClick={onClose}>Annuler</Btn><Btn variant="critical" onClick={() => onValider(cmd, autre.trim() || motif)}>Enregistrer l'échec</Btn></>}>
+      <div className="stack-sm">
+        <p className="subtle">Le colis revient à la boutique : il repasse dans « À préparer » et pourra repartir. La vente et le stock ne changent pas.</p>
+        <div className="chips">{MOTIFS_ECHEC.map((m) => <button type="button" key={m} className={cx("chip", motif === m && !autre && "on")} onClick={() => { setMotif(m); setAutre(""); }}>{m}</button>)}</div>
+        <Field label="Autre motif" optional><Input value={autre} onChange={(e) => setAutre(e.target.value)} placeholder="Précisez…" /></Field>
+      </div>
+    </Modal>
+  );
+}
+
+function PageLivraisons() {
+  const { data, update, sync, go, toast, estAdmin, openSale } = useApp();
+  const [tab, setTab] = useState("a_preparer");
+  const [q, setQ] = useState("");
+  const [filtreLivreur, setFiltreLivreur] = useState("");
+  const [sel, setSel] = useState(() => new Set());
+  const [lot, setLot] = useState({ livreur: "", date: "" });
+  const [gerer, setGerer] = useState(false);
+  const [feuille, setFeuille] = useState(null);
+  const [echec, setEchec] = useState(null);
+  const [encaisser, setEncaisser] = useState(null);
+  const [aLivrer, setALivrer] = useState(null);
+  useEffect(() => setSel(new Set()), [tab, q, filtreLivreur]);
+
+  const livreurs = data.livreurs || [];
+  const nomLivreur = (id) => livreurs.find((l) => l.id === id)?.nom || null;
+  const aujourdhui = isoDate(new Date());
+  const tous = useMemo(() => enrichCommandes(data).filter((c) => c.livraison && c.vente), [data]);
+  const actifs = tous.filter((c) => c.statut !== "annulee");
+  const groupes = {
+    a_preparer: actifs.filter((c) => c.statut === "en_attente" || c.statut === "confirmee"),
+    en_cours: actifs.filter((c) => c.statut === "expediee"),
+    livrees: actifs.filter((c) => c.statut === "livree"),
+  };
+  const enRetard = (c) => c.statut !== "livree" && c.livraisonPrevue && c.livraisonPrevue < aujourdhui;
+  const nonLivres = [...groupes.a_preparer, ...groupes.en_cours];
+  const base = tab === "toutes" ? tous : tab === "retard" ? nonLivres.filter(enRetard) : groupes[tab];
+  const rows = base.filter((c) => (!filtreLivreur || (filtreLivreur === "_aucun" ? !c.livreurId : c.livreurId === filtreLivreur))
+    && norm(`${c.contactTel || ""} ${c.client?.tel || ""} ${c.client?.nom || ""} ${c.adresseLivraison} ${c.numero} ${c.numeroTicket || ""} ${c.lignes.map((l) => l.pack?.nom).join(" ")}`).replace(/(\d)\s+(?=\d)/g, "$1").includes(norm(q).replace(/(\d)\s+(?=\d)/g, "$1")))
+    .sort((a, b) => (tab === "livrees" || tab === "toutes" ? b.stamp.localeCompare(a.stamp) : (a.livraisonPrevue || "9999").localeCompare(b.livraisonPrevue || "9999") || a.stamp.localeCompare(b.stamp)));
+  const pg = usePaged(rows, 15, tab + q + filtreLivreur);
+
+  /* ---- actions ---- */
+  const majLivraison = (ids, champs) => update((d) => ({ ...d, commandes: d.commandes.map((c) => (ids.includes(c.id) ? { ...c, ...champs } : c)) }));
+  const affecter = (ids, livreurId, date) => {
+    majLivraison(ids, { livreurId: livreurId || null, ...(date ? { livraisonPrevue: date } : {}) });
+    if (ids.length === 1) sync(["PATCH", `/api/commandes/${ids[0]}/livraison`, { livreur_id: livreurId || null, ...(date ? { livraison_prevue: date } : {}) }]);
+    else sync(["POST", "/api/commandes/livraison/affecter", { ids, livreur_id: livreurId || null, livraison_prevue: date || undefined }]);
+  };
+  const prevoir = (c, date) => { majLivraison([c.id], { livraisonPrevue: date || null }); sync(["PATCH", `/api/commandes/${c.id}/livraison`, { livraison_prevue: date || null }]); };
+  const changerStatut = (ids, statut) => {
+    update((d) => { const n = applyStatut(d, ids, statut); return { ...n, commandes: n.commandes.map((c) => (ids.includes(c.id) ? { ...c, livreeLe: statut === "livree" ? new Date().toISOString() : null } : c)) }; });
+    sync(ids.length === 1 ? ["PATCH", `/api/commandes/${ids[0]}/statut`, { statut }] : ["POST", "/api/commandes/statut", { ids, statut }]);
+  };
+  const partir = (ids) => {
+    const sans = actifs.filter((c) => ids.includes(c.id) && !c.livreurId).length;
+    changerStatut(ids, "expediee");
+    toast({ title: `${ids.length} colis parti${ids.length > 1 ? "s" : ""} en livraison`, desc: sans ? `${sans} sans livreur désigné` : undefined });
+    setSel(new Set());
+  };
+  const livrer = (c) => {
+    // Paiement à la livraison : on encaisse d'abord, le colis est marqué livré ensuite
+    if (aEncaisser(c)) { setALivrer(c.id); setEncaisser(c); return; }
+    changerStatut([c.id], "livree");
+    toast({ title: "Colis livré", desc: c.client?.nom });
+  };
+  useEffect(() => {
+    if (!aLivrer || encaisser) return;
+    const c = enrichCommandes(data).find((x) => x.id === aLivrer);
+    if (c && !aEncaisser(c)) { changerStatut([c.id], "livree"); toast({ title: "Colis livré et encaissé", desc: fmt(c.total) }); }
+    setALivrer(null);
+  }, [aLivrer, encaisser, data]);
+  const declarerEchec = (c, motif) => {
+    const maintenant = new Date().toISOString();
+    update((d) => ({ ...d, commandes: d.commandes.map((x) => (x.id === c.id ? { ...x, statut: "confirmee", tentatives: (x.tentatives || 0) + 1, historique: [...(x.historique || []), { type: "note", texte: `Échec de livraison : ${motif}`, date: maintenant }] } : x)) }));
+    sync(["POST", `/api/commandes/${c.id}/echec-livraison`, { motif }]);
+    toast({ title: "Échec de livraison enregistré", desc: motif });
+    setEchec(null);
+  };
+  const prevenirClient = (c) => {
+    const l = livreurs.find((x) => x.id === c.livreurId);
+    const texte = `Bonjour, ${data.boutique?.nom || "votre boutique"} : votre commande ${c.numero} ${c.statut === "expediee" ? "est en cours de livraison" : "sera livrée" + (c.livraisonPrevue ? " le " + fmtDate(c.livraisonPrevue) : " prochainement")}${c.adresseLivraison ? " à : " + c.adresseLivraison : ""}.${l ? ` Livreur : ${l.nom}, ${l.tel}.` : ""}${aEncaisser(c) ? ` Montant à régler à la livraison : ${fmt(c.total)}.` : " Commande déjà réglée."}`;
+    window.open(`https://wa.me/${telInternational(c.contactTel || c.client?.tel)}?text=${encodeURIComponent(texte)}`, "_blank", "noopener");
+  };
+
+  /* ---- indicateurs ---- */
+  const il30 = isoDate(addDays(today(), -30));
+  const livreesAujourdhui = groupes.livrees.filter((c) => (c.livreeLe || "").slice(0, 10) === aujourdhui || (!c.livreeLe && c.vente.date === aujourdhui)).length;
+  const retards = nonLivres.filter(enRetard).length;
+  const sansLivreur = nonLivres.filter((c) => !c.livreurId).length;
+  const kpis = [
+    { label: "Colis à préparer", value: groupes.a_preparer.length, f: fmtNum, icon: Package, tint: 1, sub: sansLivreur ? `${sansLivreur} sans livreur` : "Tous ont un livreur" },
+    { label: "En cours de livraison", value: groupes.en_cours.length, f: fmtNum, icon: Truck, tint: 5, sub: retards ? `${retards} en retard sur la date prévue` : "Aucun retard" },
+    { label: "Livrés aujourd'hui", value: livreesAujourdhui, f: fmtNum, icon: PackageCheck, tint: 0, sub: `${groupes.livrees.filter((c) => c.vente.date >= il30).length} sur 30 jours` },
+    { label: "À encaisser à la livraison", value: nonLivres.reduce((s, c) => s + aEncaisser(c), 0), f: fmt, icon: Banknote, tint: 3, sub: `Frais de livraison (30 j) : ${fmt(actifs.filter((c) => c.vente.date >= il30).reduce((s, c) => s + c.frais, 0))}` },
+  ];
+  const parLivreur = livreurs.map((l) => {
+    const siens = actifs.filter((c) => c.livreurId === l.id);
+    return { l, aPreparer: siens.filter((c) => c.statut === "en_attente" || c.statut === "confirmee").length, enCours: siens.filter((c) => c.statut === "expediee").length,
+      livres: siens.filter((c) => c.statut === "livree" && c.vente.date >= il30).length, encaisser: siens.filter((c) => c.statut !== "livree").reduce((s, c) => s + aEncaisser(c), 0), echecs: siens.reduce((s, c) => s + (c.tentatives || 0), 0) };
+  });
+
+  const selection = [...sel];
+  const allOnPage = pg.slice.length > 0 && pg.slice.every((c) => sel.has(c.id));
+  const toggle = (id, v) => setSel((s) => { const n = new Set(s); v ? n.add(id) : n.delete(id); return n; });
+  const toggleAll = (v) => setSel((s) => { const n = new Set(s); pg.slice.forEach((c) => (v ? n.add(c.id) : n.delete(c.id))); return n; });
+
+  return (
+    <>
+      <PageHeader title="Livraisons" meta="Le suivi de chaque colis : préparation, départ, remise au client, encaissement"
+        actions={<>
+          {estAdmin && <Btn icon={Users} onClick={() => setGerer(true)}>Livreurs</Btn>}
+          <Btn icon={ClipboardList} onClick={() => setFeuille({ livreurId: filtreLivreur && filtreLivreur !== "_aucun" ? filtreLivreur : "" })}>Feuille de route</Btn>
+          <Btn variant="primary" icon={Plus} onClick={() => openSale()} className="hide-sm">Nouvelle commande</Btn>
+        </>} />
+      <div className="kpi-grid stagger">
+        {kpis.map((k, i) => (
+          <div className="card kpi" key={k.label} style={{ "--i": i }}>
+            <div className="kpi-label"><span className={cx("kpi-dot", `tint-${k.tint}`)}><k.icon size={13} /></span>{k.label}</div>
+            <div className="kpi-value"><CountUp value={k.value} format={k.f} /></div>
+            <div className="subtle">{k.sub}</div>
+          </div>
+        ))}
+      </div>
+      {livreurs.length === 0 && estAdmin && <div className="banner banner-info" style={{ marginBottom: 16 }}><Info size={16} /><div>Ajoutez vos livreurs pour leur confier des colis et leur envoyer leur feuille de route. <button className="link" onClick={() => setGerer(true)}>Ajouter un livreur</button></div></div>}
+      {retards > 0 && <div className="banner banner-warning" style={{ marginBottom: 16 }}><AlertTriangle size={16} /><div><b>{retards} colis en retard</b> sur la date de livraison prévue. <button className="link" onClick={() => setTab("retard")}>Voir ces colis</button></div></div>}
+
+      <div className="card">
+        <div className="table-toolbar">
+          <Tabs value={tab} onChange={setTab} tabs={[
+            { key: "a_preparer", label: "À préparer", count: groupes.a_preparer.length },
+            { key: "en_cours", label: "En livraison", count: groupes.en_cours.length },
+            { key: "retard", label: "En retard", count: retards },
+            { key: "livrees", label: "Livrés", count: groupes.livrees.length },
+            { key: "toutes", label: "Tous", count: tous.length },
+          ]} />
+        </div>
+        <div className="table-filters">
+          <SearchInput value={q} onChange={setQ} placeholder="Rechercher par téléphone, client, lieu, article…" />
+          <Select value={filtreLivreur} onChange={(e) => setFiltreLivreur(e.target.value)} style={{ width: 210 }} aria-label="Livreur">
+            <option value="">Tous les livreurs</option>
+            <option value="_aucun">Sans livreur</option>
+            {livreurs.map((l) => <option key={l.id} value={l.id}>{l.nom}</option>)}
+          </Select>
+        </div>
+        {rows.length === 0 ? (
+          <EmptyState icon={Truck} title={q || filtreLivreur ? "Aucun colis trouvé" : tab === "a_preparer" ? "Aucun colis à préparer" : "Aucun colis ici"}>
+            {tab === "a_preparer" && !q ? "Les commandes en ligne et les ventes avec l'option « Livraison » apparaissent ici." : "Changez d'onglet ou de filtre."}
+          </EmptyState>
+        ) : (
+          <div className="table-scroll has-bulk">
+            {sel.size > 0 && (
+              <div className="bulk-bar bulk-livraison">
+                <Checkbox checked={allOnPage} indeterminate={!allOnPage} onChange={toggleAll} label={<strong>{sel.size} colis</strong>} />
+                <span className="grow" />
+                <Select value={lot.livreur} onChange={(e) => setLot({ ...lot, livreur: e.target.value })} style={{ width: 170 }} aria-label="Livreur"><option value="">Choisir un livreur…</option>{livreurs.filter((l) => l.actif).map((l) => <option key={l.id} value={l.id}>{l.nom}</option>)}</Select>
+                <input type="date" className="input date-compacte" value={lot.date} min={aujourdhui} onChange={(e) => setLot({ ...lot, date: e.target.value })} aria-label="Date prévue" />
+                <Btn size="sm" disabled={!lot.livreur} onClick={() => { affecter(selection, lot.livreur, lot.date); toast({ title: `${selection.length} colis confié${selection.length > 1 ? "s" : ""} à ${nomLivreur(lot.livreur)}` }); setSel(new Set()); }}>Confier</Btn>
+                <Btn size="sm" variant="primary" icon={Truck} onClick={() => partir(selection.filter((id) => groupes.a_preparer.some((c) => c.id === id)))}>Départ</Btn>
+              </div>
+            )}
+            <table className="table table-livraisons">
+              <thead><tr>
+                <th className="col-check hide-sm"><Checkbox checked={allOnPage} onChange={toggleAll} label={<span className="sr-only">Tout sélectionner</span>} /></th>
+                <th>Contact</th><th>Lieu de livraison</th><th className="hide-md">Colis</th><th className="right">À encaisser</th><th className="hide-sm">Livreur</th><th className="hide-md">Prévue le</th><th>Statut</th><th style={{ width: 150 }} />
+              </tr></thead>
+              <tbody key={tab + pg.page}>
+                {pg.slice.map((c, i) => {
+                  const fini = c.statut === "livree" || c.statut === "annulee";
+                  return (
+                    <tr key={c.id} className={cx(sel.has(c.id) && "selected")} style={{ "--i": i }}>
+                      <td className="col-check hide-sm">{!fini && <Checkbox checked={sel.has(c.id)} onChange={(v) => toggle(c.id, v)} label={<span className="sr-only">Sélectionner</span>} />}</td>
+                      <td><button className="link cell-main num" onClick={() => go("commandes", c.id)}>{c.contactTel || c.client?.tel || "—"}</button><div className="cell-sub">{c.client?.nom}</div></td>
+                      <td className="wrap">{c.adresseLivraison || <span className="subtle">Adresse à préciser</span>}
+                        <div className="cell-sub only-mobile">{resumeCommande(c)} · {nomLivreur(c.livreurId) || "sans livreur"}</div></td>
+                      <td className="hide-md wrap">{c.lignes.map((l) => `${l.pack?.nom || "?"} × ${l.qte}`).join(", ")}<div className="cell-sub">{c.pieces} article{c.pieces > 1 ? "s" : ""} · {c.numeroTicket || c.numero}</div></td>
+                      <td className="right num strong">{aEncaisser(c) ? fmt(aEncaisser(c)) : <Badge tone="success">Payé</Badge>}{c.frais > 0 && <div className="cell-sub">dont {fmt(c.frais)} livr.</div>}</td>
+                      <td className="hide-sm">{fini ? nomLivreur(c.livreurId) || <span className="subtle">—</span> : (
+                        <Select value={c.livreurId || ""} onChange={(e) => affecter([c.id], e.target.value)} aria-label="Livreur" style={{ minWidth: 150 }}>
+                          <option value="">Sans livreur</option>
+                          {livreurs.filter((l) => l.actif || l.id === c.livreurId).map((l) => <option key={l.id} value={l.id}>{l.nom}</option>)}
+                        </Select>)}</td>
+                      <td className="hide-md">{fini ? (c.livreeLe ? fmtDateCourt(c.livreeLe.slice(0, 10)) : c.livraisonPrevue ? fmtDateCourt(c.livraisonPrevue) : "—") : (
+                        <input type="date" className={cx("input date-compacte", enRetard(c) && "retard")} value={c.livraisonPrevue || ""} onChange={(e) => prevoir(c, e.target.value)} aria-label="Date prévue" />)}</td>
+                      <td><StatutBadge statut={c.statut} />{enRetard(c) && <div><Badge tone="critical">En retard</Badge></div>}{c.tentatives > 0 && <div><Badge tone="warning">{c.tentatives} échec{c.tentatives > 1 ? "s" : ""}</Badge></div>}</td>
+                      <td className="right"><span className="row" style={{ gap: 4, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                        {(c.statut === "en_attente" || c.statut === "confirmee") && <Btn size="sm" variant="primary" icon={Truck} onClick={() => partir([c.id])}>Départ</Btn>}
+                        {c.statut === "expediee" && <>
+                          <Btn size="sm" variant="primary" icon={PackageCheck} onClick={() => livrer(c)}>Livré</Btn>
+                          <Btn size="sm" variant="critical-plain" onClick={() => setEchec(c)}>Échec</Btn>
+                        </>}
+                        {!fini && (c.contactTel || c.client?.tel) && <button className="icon-btn" title="Prévenir le client (WhatsApp)" aria-label="Prévenir le client" onClick={() => prevenirClient(c)}><MessageSquare size={15} /></button>}
+                      </span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <Pager pg={pg} />
+      </div>
+
+      {livreurs.length > 0 && (
+        <Card title="Par livreur" sub="Colis confiés, livrés sur 30 jours et argent à rapporter" padded={false}
+          actions={estAdmin && <Btn size="sm" icon={Pencil} onClick={() => setGerer(true)}>Gérer</Btn>}>
+          <div style={{ height: 12 }} />
+          <div className="table-scroll">
+            <table className="table">
+              <thead><tr><th>Livreur</th><th className="right">À préparer</th><th className="right">En cours</th><th className="right hide-sm">Livrés (30 j)</th><th className="right hide-sm">Échecs</th><th className="right">À encaisser</th><th style={{ width: 60 }} /></tr></thead>
+              <tbody>
+                {parLivreur.map(({ l, aPreparer, enCours, livres, encaisser: e, echecs }, i) => (
+                  <tr key={l.id} style={{ "--i": i, opacity: l.actif ? 1 : 0.55 }}>
+                    <td><div className="cell-product"><Avatar name={l.nom} size="sm" /><div><div className="cell-main">{l.nom}</div><div className="cell-sub">{l.tel}{l.zone ? " · " + l.zone : ""}</div></div></div></td>
+                    <td className="right num">{aPreparer}</td><td className="right num strong">{enCours}</td><td className="right num hide-sm">{livres}</td><td className="right num hide-sm">{echecs}</td>
+                    <td className="right num strong">{fmt(e)}</td>
+                    <td className="right"><button className="icon-btn" title="Feuille de route" aria-label={`Feuille de route de ${l.nom}`} disabled={!aPreparer && !enCours} onClick={() => setFeuille({ livreurId: l.id })}><ClipboardList size={15} /></button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      <LivreursModal open={gerer} onClose={() => setGerer(false)} />
+      <FeuilleRouteModal open={!!feuille} livreurId={feuille?.livreurId} colis={nonLivres} onClose={() => setFeuille(null)} />
+      <EchecLivraisonModal cmd={echec} onClose={() => setEchec(null)} onValider={declarerEchec} />
+      <EncaisserModal open={!!encaisser} cmd={encaisser} onClose={() => setEncaisser(null)} />
     </>
   );
 }
@@ -4989,6 +5351,7 @@ function App() {
     case "finances": content = estAdmin ? <PageFinances route={route} /> : <AccesReserve />; break;
     case "vendeurs": content = estAdmin ? <PageVendeurs /> : <AccesReserve />; break;
     case "tickets": content = <PageTickets route={route} />; break;
+    case "livraisons": content = <PageLivraisons />; break;
     case "parametres": content = <PageParametres />; break;
     default: content = <PageAccueil />;
   }

@@ -20,6 +20,7 @@ const recusRoutes = require("./routes/recus");
 const boutiqueRoutes = require("./routes/boutique");
 const stocksRoutes = require("./routes/stocks");
 const campagnesRoutes = require("./routes/campagnes");
+const livreursRoutes = require("./routes/livreurs");
 const { DOSSIER_UPLOADS } = require("./lib/images");
 
 const app = express();
@@ -92,6 +93,7 @@ app.use("/api/campagnes", adminOnly, campagnesRoutes);
 app.use("/api/dashboard", adminOnly, dashboardRoutes);
 app.use("/api/donnees", donneesRoutes);
 app.use("/api/parametres", parametresRoutes);
+app.use("/api/livreurs", livreursRoutes);
 
 app.use("/api", (req, res) => res.status(404).json({ erreur: "Route introuvable" }));
 

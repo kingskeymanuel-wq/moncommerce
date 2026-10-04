@@ -34,7 +34,8 @@ function changerStatut(commandeId, statut, auteurId, texte = null) {
   const lignes = lignesCommande(cmd);
   if (statut === "annulee") mouvementStock(lignes, +1, "annulation", cmd.numero, auteurId);
   else if (cmd.statut === "annulee") mouvementStock(lignes, -1, "retablissement", cmd.numero, auteurId);
-  db.prepare("UPDATE commandes SET statut = ?, maj_le = ? WHERE id = ?").run(statut, new Date().toISOString(), commandeId);
+  const maintenant = new Date().toISOString();
+  db.prepare("UPDATE commandes SET statut = ?, maj_le = ?, livree_le = ? WHERE id = ?").run(statut, maintenant, statut === "livree" ? maintenant : null, commandeId);
   ajouterEvenement(commandeId, { statut, auteurId, texte });
   return db.prepare("SELECT * FROM commandes WHERE id = ?").get(commandeId);
 }

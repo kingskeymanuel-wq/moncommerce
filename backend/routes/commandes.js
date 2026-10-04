@@ -166,6 +166,65 @@ router.post("/:id/envoyer-email", async (req, res) => {
   }
 });
 
+/* ------------------------------------------------------------ livraisons */
+const dateOuNull = (d) => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
+const livreurValide = (id) => (id ? db.prepare("SELECT id, nom FROM livreurs WHERE id = ? AND supprime = 0").get(String(id)) : null);
+
+// PATCH /api/commandes/:id/livraison — { livraison?, livreur_id?, livraison_prevue?, adresse_livraison? }
+router.patch("/:id/livraison", (req, res) => {
+  const cmd = lire(req.params.id);
+  if (!cmd) return res.status(404).json({ erreur: "Commande introuvable" });
+  const c = { ...cmd };
+  if (req.body.livraison !== undefined) c.livraison = req.body.livraison ? 1 : 0;
+  if (req.body.livreur_id !== undefined) {
+    const l = livreurValide(req.body.livreur_id);
+    if (req.body.livreur_id && !l) return res.status(400).json({ erreur: "Livreur introuvable" });
+    c.livreur_id = l?.id || null;
+    if (l) c.livraison = 1;
+    if ((cmd.livreur_id || null) !== c.livreur_id) ajouterEvenement(cmd.id, { type: "note", texte: l ? `Livraison confiée à ${l.nom}` : "Livreur retiré", auteurId: req.user?.id });
+  }
+  if (req.body.livraison_prevue !== undefined) c.livraison_prevue = dateOuNull(req.body.livraison_prevue);
+  if (req.body.adresse_livraison !== undefined) c.adresse_livraison = String(req.body.adresse_livraison).slice(0, 200);
+  db.prepare("UPDATE commandes SET livraison = ?, livreur_id = ?, livraison_prevue = ?, adresse_livraison = ?, maj_le = ? WHERE id = ?")
+    .run(c.livraison, c.livreur_id, c.livraison_prevue, c.adresse_livraison, new Date().toISOString(), cmd.id);
+  res.json(enrichir(lire(cmd.id)));
+});
+
+// POST /api/commandes/livraison/affecter — { ids, livreur_id, livraison_prevue? } : confie plusieurs colis à un livreur
+router.post("/livraison/affecter", (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.map(String) : [];
+  const l = livreurValide(req.body.livreur_id);
+  if (!ids.length) return res.status(400).json({ erreur: "ids doit être une liste non vide" });
+  if (req.body.livreur_id && !l) return res.status(400).json({ erreur: "Livreur introuvable" });
+  const prevue = dateOuNull(req.body.livraison_prevue);
+  let n = 0;
+  db.transaction(() => {
+    for (const id of ids) {
+      const cmd = lire(id);
+      if (!cmd || !aMoi(cmd, req)) continue;
+      db.prepare("UPDATE commandes SET livraison = 1, livreur_id = ?, livraison_prevue = COALESCE(?, livraison_prevue), maj_le = ? WHERE id = ?").run(l?.id || null, prevue, new Date().toISOString(), id);
+      if ((cmd.livreur_id || null) !== (l?.id || null)) ajouterEvenement(id, { type: "note", texte: l ? `Livraison confiée à ${l.nom}` : "Livreur retiré", auteurId: req.user?.id });
+      n++;
+    }
+  })();
+  res.json({ modifiees: n });
+});
+
+// POST /api/commandes/:id/echec-livraison — { motif } : le client était absent, injoignable…
+// Le colis revient à la boutique (statut « confirmée ») ; la tentative est comptée.
+router.post("/:id/echec-livraison", (req, res) => {
+  const cmd = lire(req.params.id);
+  if (!cmd) return res.status(404).json({ erreur: "Commande introuvable" });
+  if (["livree", "annulee"].includes(cmd.statut)) return res.status(409).json({ erreur: "Cette commande n'est plus en cours de livraison" });
+  const motif = String(req.body.motif || "").trim().slice(0, 200) || "Livraison non aboutie";
+  db.transaction(() => {
+    db.prepare("UPDATE commandes SET livraison_tentatives = livraison_tentatives + 1 WHERE id = ?").run(cmd.id);
+    changerStatut(cmd.id, "confirmee", req.user?.id, `Échec de livraison : ${motif}`);
+    if (cmd.statut === "confirmee") ajouterEvenement(cmd.id, { type: "note", texte: `Échec de livraison : ${motif}`, auteurId: req.user?.id });
+  })();
+  res.json(enrichir(lire(cmd.id)));
+});
+
 // POST /api/commandes/:id/ticket — { action: imprime | pdf | whatsapp | lien } : le vendeur déclare
 // ce qu'il a fait du ticket. Une vente dont le ticket n'a jamais été remis reste signalée à l'administrateur.
 router.post("/:id/ticket", (req, res) => {
