@@ -115,6 +115,8 @@ router.patch("/:id/paiement", (req, res) => {
   if (cmd.statut === "annulee") return res.status(409).json({ erreur: "Commande annulée : rien à encaisser" });
   const lignes = lignesCommande(cmd);
   if (lignes[0]?.statut_paiement === "payee") return res.status(409).json({ erreur: "Cette commande est déjà payée" });
+  // L'argent d'un transfert arrive sur le compte de la boutique : seul l'administrateur peut constater qu'il est bien reçu
+  if (lignes[0]?.statut_paiement === "a_verifier" && req.user?.role !== "admin") return res.status(403).json({ erreur: "Seul l'administrateur confirme la réception d'un transfert Mobile Money" });
   const p = validerPaiement(req.body, totalCommande(cmd, lignes), { encaissement: true });
   if (p.erreur) return res.status(400).json({ erreur: p.erreur });
   const maintenant = new Date().toISOString();

@@ -24,6 +24,7 @@ const { lireBoutique, ecrireBoutique } = require("./parametres");
 
 const router = express.Router();
 
+const essais = new Map(); // téléphone → { n : essais ratés, jusqu : fin du verrouillage }
 const profil = (u) => ({ id: u.id, nom: u.nom, telephone: u.telephone, email: u.email, role: u.role, actif: u.actif !== 0 });
 const ficheBoutique = () => { const b = db.espaceCourant(); return { id: b.id, slug: b.slug, nom: lireBoutique().nom }; };
 
@@ -97,7 +98,7 @@ function validerCompte(corps) {
   const mdp = corps.mot_de_passe;
   if (!nom || !telephone || !mdp) return { erreur: "nom, telephone et mot_de_passe sont requis" };
   if (telephone.replace(/\D/g, "").length < 8) return { erreur: "Numéro de téléphone invalide" };
-  if (String(mdp).length < 6) return { erreur: "Le mot de passe doit contenir au moins 6 caractères" };
+  if (String(mdp).length < 8) return { erreur: "Le mot de passe doit contenir au moins 8 caractères" };
   if (db.comptes.boutiqueDe(telephone)) return { erreur: "Un compte existe déjà avec ce numéro", statut: 409 };
   return { compte: { nom, telephone, mot_de_passe: mdp, email: String(corps.email || "").trim().toLowerCase() || null } };
 }
@@ -125,11 +126,22 @@ router.post("/connexion", (req, res) => {
   const telephone = normTel(req.body.telephone);
   if (!telephone || !mot_de_passe) return res.status(400).json({ erreur: "telephone et mot_de_passe sont requis" });
   const refus = () => res.status(401).json({ erreur: "Numéro ou mot de passe incorrect" });
+  // Cinq mots de passe faux de suite : le compte est verrouillé 15 minutes (protège contre les essais en série)
+  const verrou = essais.get(telephone);
+  if (verrou && verrou.jusqu > Date.now()) return res.status(429).json({ erreur: "Trop d'essais : ce compte est verrouillé pendant 15 minutes." });
+  const echec = () => {
+    const v = essais.get(telephone) || { n: 0, jusqu: 0 };
+    v.n += 1;
+    if (v.n >= 5) { v.jusqu = Date.now() + 15 * 60 * 1000; v.n = 0; }
+    essais.set(telephone, v);
+    return refus();
+  };
   const boutiqueId = db.comptes.boutiqueDe(telephone);
-  if (!boutiqueId) return refus();
+  if (!boutiqueId) return echec();
   db.dansEspace(boutiqueId, () => {
     const user = db.prepare("SELECT * FROM utilisateurs WHERE telephone = ?").get(telephone);
-    if (!user || !bcrypt.compareSync(String(mot_de_passe), user.mot_de_passe)) return refus();
+    if (!user || !bcrypt.compareSync(String(mot_de_passe), user.mot_de_passe)) return echec();
+    essais.delete(telephone);
     if (user.actif === 0) return res.status(403).json({ erreur: "Ce compte a été désactivé par l'administrateur de la boutique." });
     res.json({ utilisateur: profil(user), boutique: ficheBoutique(), jeton: signToken(user, boutiqueId) });
   });
@@ -154,7 +166,7 @@ router.patch("/equipe/:id", authRequired, adminOnly, (req, res) => {
   }
   if (req.body.nom !== undefined && String(req.body.nom).trim()) db.prepare("UPDATE utilisateurs SET nom = ? WHERE id = ?").run(String(req.body.nom).trim().slice(0, 80), u.id);
   if (req.body.mot_de_passe !== undefined) {
-    if (String(req.body.mot_de_passe).length < 6) return res.status(400).json({ erreur: "Le mot de passe doit contenir au moins 6 caractères" });
+    if (String(req.body.mot_de_passe).length < 8) return res.status(400).json({ erreur: "Le mot de passe doit contenir au moins 8 caractères" });
     db.prepare("UPDATE utilisateurs SET mot_de_passe = ? WHERE id = ?").run(bcrypt.hashSync(String(req.body.mot_de_passe), 10), u.id);
   }
   res.json(profil(db.prepare("SELECT * FROM utilisateurs WHERE id = ?").get(u.id)));

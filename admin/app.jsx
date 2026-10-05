@@ -2791,7 +2791,7 @@ function PageCommande({ id }) {
           </Card>
 
           <Card title={<span className="row"><PaiementBadge c={c} /></span>}
-            actions={["en_attente", "a_verifier", "echoue"].includes(v?.statutPaiement) && c.statut !== "annulee" && (v?.statutPaiement === "a_verifier"
+            actions={["en_attente", "a_verifier", "echoue"].includes(v?.statutPaiement) && c.statut !== "annulee" && (estAdmin || v?.statutPaiement !== "a_verifier") && (v?.statutPaiement === "a_verifier"
               ? <Btn variant="brand" icon={ShieldCheck} onClick={() => setEncaisser(true)}>Vérifier le paiement</Btn>
               : <Btn variant="brand" icon={Banknote} onClick={() => setEncaisser(true)}>Encaisser le paiement</Btn>)}>
             <div className="stack-sm">
@@ -4855,18 +4855,24 @@ function CarteBoutiqueEnLigne({ estAdmin }) {
   const depuis = () => Object.fromEntries(CLES.map((k) => [k, String(({ ...boutiqueParDefaut(), ...(data.boutique || {}) })[k] ?? "")]));
   const [f, setF] = useState(depuis);
   const [cinetpay, setCinetpay] = useState(null);
+  const [mdpActuel, setMdpActuel] = useState("");
+  const SENSIBLES = CLES.filter((k) => k.startsWith("momo_") || k.startsWith("lien_"));
   useEffect(() => { setF(depuis()); }, [JSON.stringify(data.boutique)]);
   useEffect(() => { apiFetch("GET", "/api/boutique/config").then((c) => setCinetpay(c.paiements)).catch(() => setCinetpay(null)); }, []);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const numeros = [["momo_wave", "Wave", "lien_wave"], ["momo_orange", "Orange Money", "lien_orange"], ["momo_mtn", "MTN MoMo", "lien_mtn"], ["momo_moov", "Moov Money", "lien_moov"]];
   const modifie = CLES.some((k) => f[k] !== depuis()[k]);
+  const paiementModifie = SENSIBLES.some((k) => (f[k] || "").trim() !== (depuis()[k] || "").trim());
+  const { mode } = useApp();
   const lien = location.origin + "/";
   const enregistrer = async () => {
     const mauvais = numeros.find(([, nom, l]) => f[l].trim() && !/^https:\/\/\S+\.\S+/.test(f[l].trim()));
     if (mauvais) return toast({ title: `Lien ${mauvais[1]} invalide`, desc: "Collez l'adresse complète, qui commence par https://", tone: "critical" });
     const b = { ...f, frais_livraison: String(Number(f.frais_livraison) || 0), livraison_gratuite_des: String(Number(f.livraison_gratuite_des) || 0) };
+    if (paiementModifie && mode === "api" && !mdpActuel) return toast({ title: "Mot de passe requis", desc: "Saisissez votre mot de passe pour modifier les numéros ou liens de paiement.", tone: "critical" });
     update((d) => ({ ...d, boutique: { ...d.boutique, ...b } }));
-    if (await sync(["PUT", "/api/parametres", b])) {
+    if (await sync(["PUT", "/api/parametres", paiementModifie ? { ...b, mot_de_passe_actuel: mdpActuel } : b])) {
+      setMdpActuel("");
       toast({ title: "Boutique en ligne mise à jour" });
       apiFetch("GET", "/api/boutique/config").then((c) => setCinetpay(c.paiements)).catch(() => {});
     }
@@ -4907,6 +4913,12 @@ function CarteBoutiqueEnLigne({ estAdmin }) {
               </div>
             ))}
           </div>
+          {paiementModifie && mode === "api" && (
+            <div className="banner banner-warning" style={{ marginTop: 14, alignItems: "center", flexWrap: "wrap" }}><Lock size={16} />
+              <div className="grow"><b>Sécurité :</b> ces numéros et liens décident où va l'argent de vos clients. Confirmez avec votre mot de passe.</div>
+              <div style={{ minWidth: 220 }}><Input icon={KeyRound} type="password" value={mdpActuel} onChange={(e) => setMdpActuel(e.target.value)} placeholder="Votre mot de passe" autoComplete="current-password" /></div>
+            </div>
+          )}
           <div className="form-grid" style={{ marginTop: 14 }}>
             <Field label="Nom affiché du titulaire" optional className="full" help="Le nom que le client voit sur son téléphone au moment du transfert."><Input value={f.momo_titulaire} onChange={(e) => set("momo_titulaire", e.target.value)} placeholder={data.boutique?.nom} disabled={!estAdmin} /></Field>
           </div>
@@ -4957,7 +4969,7 @@ function EquipeModal({ open, onClose }) {
       <div className="form-grid">
         <Field label="Nom complet" className="full"><Input value={f.nom} onChange={(e) => set("nom", e.target.value)} placeholder="Ex : Awa Bamba" /></Field>
         <Field label="Téléphone"><Input icon={Phone} value={f.tel} onChange={(e) => set("tel", e.target.value)} placeholder="07 00 00 00 00" inputMode="tel" /></Field>
-        <Field label="Mot de passe provisoire" help="6 caractères minimum."><Input icon={Lock} type="password" value={f.mdp} onChange={(e) => set("mdp", e.target.value)} autoComplete="new-password" /></Field>
+        <Field label="Mot de passe provisoire" help="8 caractères minimum."><Input icon={Lock} type="password" value={f.mdp} onChange={(e) => set("mdp", e.target.value)} autoComplete="new-password" /></Field>
         <Field label="Rôle" className="full">
           <Segmented full value={f.role} onChange={(v) => set("role", v)} options={[{ value: "vendeur", label: "Vendeur", icon: User }, { value: "admin", label: "Co-administrateur", icon: ShieldCheck }]} />
         </Field>
@@ -5092,6 +5104,18 @@ function SkeletonPage() {
   );
 }
 
+/* Sécurité : pendant 7 jours, rappelle que les numéros ou liens de paiement ont été modifiés */
+function BandeauPaiementModifie() {
+  const { data } = useApp();
+  const m = data?.boutique?.paiement_modifie;
+  if (!m?.le || Date.now() - new Date(m.le).getTime() > 7 * 864e5) return null;
+  return (
+    <div className="banner banner-warning" style={{ marginBottom: 16 }}><ShieldCheck size={16} />
+      <div><b>Coordonnées de paiement modifiées</b> le {fmtDateTime(m.le)} par {m.par || "un administrateur"}. Si ce n'est pas vous, changez votre mot de passe tout de suite et vérifiez vos numéros dans Paramètres.</div>
+    </div>
+  );
+}
+
 /* =====================================================================
    Connexion (téléphone + mot de passe + code SMS)
    ===================================================================== */
@@ -5141,7 +5165,7 @@ function AuthScreen({ onSuccess, mode }) {
     if (inscription && !nom.trim()) return fail("Indiquez votre nom.");
     if (inscription && boutique.trim().length < 2) return fail("Indiquez le nom de votre boutique.");
     if (tel.replace(/\D/g, "").length < 8) return fail("Entrez un numéro de téléphone valide.");
-    const min = enLigne ? 6 : 4;
+    const min = enLigne ? 8 : 4;
     if (mdp.length < min) return fail(`Le mot de passe doit contenir au moins ${min} caractères.`);
     if (inscription && mdp !== mdp2) return fail("Les deux mots de passe ne correspondent pas.");
     setBusy(true);
@@ -5526,7 +5550,7 @@ function App() {
         <div className="shell">
           <aside className="sidebar"><SidebarNav /></aside>
           <main className="main" ref={mainRef}>
-            <div className="page" key={booting ? "boot" : pageKey}>{booting ? <SkeletonPage /> : content}</div>
+            <div className="page" key={booting ? "boot" : pageKey}>{booting ? <SkeletonPage /> : <>{estAdmin && <BandeauPaiementModifie />}{content}</>}</div>
           </main>
         </div>
         <BottomNav onMenu={() => setDrawer(true)} />

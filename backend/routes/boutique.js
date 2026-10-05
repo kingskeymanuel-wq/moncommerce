@@ -204,6 +204,7 @@ router.post("/commandes", limiteCommandes, espacePublic, async (req, res) => {
     const telPayeur = String(paiement.telephone || "").trim().slice(0, 30);
     if (normTel(telPayeur).replace(/\D/g, "").length < 8) return res.status(400).json({ erreur: `Indiquez le numéro ${op.mode} qui a envoyé le paiement.` });
     if (ref.length < 4) return res.status(400).json({ erreur: "Indiquez l'ID de transaction reçu par SMS après votre transfert." });
+    if (db.prepare("SELECT 1 FROM ventes WHERE lower(reference_paiement) = lower(?) LIMIT 1").get(ref)) return res.status(409).json({ erreur: "Cet ID de transaction a déjà été utilisé pour une autre commande." });
     champsPaiement = { mode: op.mode, statut: "a_verifier", reference: ref, telephone: telPayeur };
   } else {
     if (!cfg.paiements.en_ligne) return res.status(400).json({ erreur: "Le paiement en ligne n'est pas disponible." });

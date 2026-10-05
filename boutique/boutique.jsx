@@ -755,7 +755,7 @@ function PortailPaiement({ operateur, montant, boutique, onFermer, onPaye }) {
         </ol>
         <a className="btn btn-secondary portail-ouvrir" href={operateur.lien} target="_blank" rel="noopener noreferrer"><Smartphone size={16} /><span>Je suis sur mon téléphone : ouvrir {operateur.mode}</span></a>
         <Btn variant="brand" full icon={CheckCircle2} onClick={onPaye}>J'ai payé, saisir l'ID de transaction</Btn>
-        <p className="portail-securite"><ShieldCheck size={14} />Le paiement se fait dans l'application {operateur.mode}{domaine ? ` (${domaine})` : ""}. Ce site ne vous demande jamais votre code secret.</p>
+        <p className="portail-securite"><ShieldCheck size={14} /><span>Avant de valider, vérifiez que le nom affiché sur votre téléphone est bien <b>{operateur.titulaire}</b>. Le paiement se fait dans l'application {operateur.mode}{domaine ? ` (${domaine})` : ""} ; ce site ne vous demande jamais votre code secret.</span></p>
       </div>
     </div>,
     document.body,
