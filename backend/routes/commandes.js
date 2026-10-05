@@ -254,7 +254,7 @@ router.get("/:id/retours", (req, res) => {
  *  - échange : l'article est remplacé par un autre, la différence de prix est à rembourser ou à encaisser.
  * Le total, le ticket de caisse et le stock sont mis à jour ; le retour est tracé dans la chronologie.
  */
-router.post("/:id/retour", (req, res) => {
+router.post("/:id/retour", adminOnly, (req, res) => {
   const cmd = lire(req.params.id);
   if (!cmd) return res.status(404).json({ erreur: "Commande introuvable" });
   if (cmd.statut === "annulee") return res.status(400).json({ erreur: "Cette commande est annulée" });

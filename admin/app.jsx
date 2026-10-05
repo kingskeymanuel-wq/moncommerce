@@ -1720,7 +1720,7 @@ function SaleModal({ open, preset, onClose }) {
   const parLot = pack?.pieces || 1;
   const prixU = prixEffectif(pack);
   const sousTotal = pack ? prixU * qte : 0;
-  const montantFrais = livraison ? Math.max(0, Number(frais) || 0) : 0;
+  const montantFrais = livraison ? Math.max(0, Number(estAdmin ? frais : fraisBoutique) || 0) : 0;
   const total = sousTotal + montantFrais;
   const set = (k, v) => { setC((s) => ({ ...s, [k]: v })); setErr((e) => ({ ...e, [k]: null })); };
   useEffect(() => { if (pack && qte > pack.stock) setQte(Math.max(1, pack.stock)); }, [packId]);
@@ -1911,7 +1911,7 @@ function SaleModal({ open, preset, onClose }) {
             <div><div className="strong">Livraison</div><div className="subtle">{livraison ? "Colis suivi dans Livraisons ; montant sur le ticket" : "Retrait sur place"}</div></div>
             <Switch on={livraison} onChange={basculerLivraison} label="Livraison" />
           </div>
-          {livraison && <Field label="Frais de livraison"><Input value={frais} onChange={(e) => setFrais(e.target.value.replace(/[^\d]/g, ""))} suffix="FCFA" inputMode="numeric" placeholder="0" /></Field>}
+          {livraison && <Field label="Frais de livraison" help={estAdmin ? null : "Tarif fixé par l'administrateur."}><Input value={estAdmin ? frais : String(fraisBoutique || 0)} onChange={(e) => estAdmin && setFrais(e.target.value.replace(/[^\d]/g, ""))} suffix="FCFA" inputMode="numeric" placeholder="0" disabled={!estAdmin} /></Field>}
           <div className="row-between">
             <div><div className="strong">Vente à un professionnel (B2B)</div><div className="subtle">Le ticket reste obligatoire</div></div>
             <Switch on={b2b} onChange={setB2b} label="Vente B2B" />
@@ -2748,7 +2748,7 @@ function PageCommande({ id }) {
           <Btn icon={Receipt} onClick={() => setReceipt(true)}>Ticket de caisse</Btn>
           <MoreMenu items={[
             c.statut === "annulee" && { label: "Rétablir la commande", icon: RotateCcw, onClick: () => setStatut("en_attente") },
-            c.statut !== "annulee" && mode === "api" && { label: "Retour ou échange d'article", icon: RotateCcw, onClick: () => setRetour(true) },
+            c.statut !== "annulee" && mode === "api" && estAdmin && { label: "Retour ou échange d'article", icon: RotateCcw, onClick: () => setRetour(true) },
             c.statut !== "annulee" && { label: "Annuler la commande", icon: XCircle, onClick: cancel },
             c.statut !== "annulee" && c.statut !== "livree" && { label: c.livraison ? "Passer en retrait sur place" : "Passer en livraison", icon: Truck, onClick: () => { patch(() => ({ livraison: !c.livraison })); sync(["PATCH", `/api/commandes/${c.id}/livraison`, { livraison: !c.livraison }]); } },
             ...(estAdmin ? ["sep", { label: "Supprimer", icon: Trash2, tone: "critical", onClick: remove }] : []),
