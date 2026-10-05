@@ -302,14 +302,14 @@ router.post("/:id/retour", adminOnly, (req, res) => {
   db.transaction(() => {
     // L'article rendu sort de la commande…
     if (q === ligne.quantite && nouveau) {
-      db.prepare("UPDATE ventes SET pack_id = ?, prix_unitaire = ? WHERE id = ?").run(nouveau.id, prixNouveau, ligne.id);
+      db.prepare("UPDATE ventes SET pack_id = ?, prix_unitaire = ?, prix_catalogue = ? WHERE id = ?").run(nouveau.id, prixNouveau, nouveau.prix, ligne.id);
     } else if (q === ligne.quantite) {
       if (cmd.vente_id === ligne.id) db.prepare("UPDATE commandes SET vente_id = ? WHERE id = ?").run(lignes.find((l) => l.id !== ligne.id).id, cmd.id);
       db.prepare("DELETE FROM ventes WHERE id = ?").run(ligne.id);
     } else {
       db.prepare("UPDATE ventes SET quantite = quantite - ? WHERE id = ?").run(q, ligne.id);
       if (nouveau) { // … et l'article d'échange y entre, sur une nouvelle ligne
-        const copie = { ...ligne, id: nanoid(), pack_id: nouveau.id, quantite: q, prix_unitaire: prixNouveau };
+        const copie = { ...ligne, id: nanoid(), pack_id: nouveau.id, quantite: q, prix_unitaire: prixNouveau, prix_catalogue: nouveau.prix };
         const cols = Object.keys(copie);
         db.prepare(`INSERT INTO ventes (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`).run(...cols.map((k) => copie[k]));
       }

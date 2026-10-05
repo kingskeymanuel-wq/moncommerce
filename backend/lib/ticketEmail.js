@@ -12,7 +12,7 @@ const STATUTS_PAIEMENT = { payee: "Payé", en_attente: "À payer à la livraison
 function ticketEmail(t, lien) {
   const date = new Date(t.date).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
   const p = t.paiement || {};
-  const lignes = t.lignes.map((l) => `<tr><td style="padding:4px 0">${echapper(l.nom)}<br><span style="color:#777">${l.quantite} × ${n(l.prix_unitaire)}</span></td><td style="text-align:right;vertical-align:top">${n(l.total)}</td></tr>`).join("");
+  const lignes = t.lignes.map((l) => `<tr><td style="padding:4px 0">${echapper(l.nom)}<br><span style="color:#777">${l.quantite} × ${n(l.prix_unitaire)}${l.prix_normal > l.prix_unitaire ? ` · prix normal ${n(l.prix_normal)}, remise −${Math.round((1 - l.prix_unitaire / l.prix_normal) * 100)} %` : ""}</span></td><td style="text-align:right;vertical-align:top">${n(l.total)}</td></tr>`).join("");
   const html = `
   <div style="font-family:'Courier New',monospace;max-width:380px;margin:auto;padding:20px;border:1px dashed #bbb;color:#111;font-size:13px">
     <div style="text-align:center;font-family:Arial,sans-serif"><b style="font-size:18px">${echapper(t.boutique.nom)}</b>
@@ -38,7 +38,7 @@ function ticketEmail(t, lien) {
   </div>`;
   const texte = [
     t.boutique.nom, `${t.canal === "en_ligne" ? "Bon de commande" : "Ticket de caisse"} ${t.numero} — ${date}`, "",
-    ...t.lignes.map((l) => `${l.nom} : ${l.quantite} × ${n(l.prix_unitaire)} = ${n(l.total)}`),
+    ...t.lignes.map((l) => `${l.nom} : ${l.quantite} × ${n(l.prix_unitaire)} = ${n(l.total)}${l.prix_normal > l.prix_unitaire ? ` (prix normal ${n(l.prix_normal)}, remise de ${n((l.prix_normal - l.prix_unitaire) * l.quantite)})` : ""}`),
     t.frais_livraison > 0 ? `Livraison : ${n(t.frais_livraison)}` : null,
     `TOTAL : ${n(t.total)} FCFA`, `Paiement : ${p.statut === "en_attente" ? "à la livraison" : p.mode} (${STATUTS_PAIEMENT[p.statut] || "Payé"})`, "",
     `Votre ticket (PDF) : ${lien}`, t.boutique.message || "Merci pour votre achat !",

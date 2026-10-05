@@ -53,6 +53,10 @@ function ouvrirEspace(fichier) {
 
   // v4 : boutique en ligne — commandes à plusieurs lignes
   ajouterColonne("ventes", "commande_id", "TEXT");
+  // Prix du catalogue au moment de la vente : permet d'afficher la remise sur le ticket (promotion, prix barré)
+  ajouterColonne("ventes", "prix_catalogue", "REAL");
+  db.exec(`CREATE TRIGGER IF NOT EXISTS ventes_prix_catalogue AFTER INSERT ON ventes WHEN NEW.prix_catalogue IS NULL
+    BEGIN UPDATE ventes SET prix_catalogue = (SELECT prix FROM packs WHERE id = NEW.pack_id) WHERE id = NEW.id; END`);
   ajouterColonne("commandes", "canal", "TEXT NOT NULL DEFAULT 'boutique'");
   ajouterColonne("commandes", "frais_livraison", "REAL NOT NULL DEFAULT 0");
   ajouterColonne("commandes", "contact_telephone", "TEXT");

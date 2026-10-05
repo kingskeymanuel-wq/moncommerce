@@ -357,7 +357,7 @@ function depuisServeur(p) {
   const ventes = p.ventes.map((v) => {
     const d = new Date(v.date_vente);
     return {
-      id: v.id, commandeId: v.commande_id || null, clientId: v.client_id, packId: v.pack_id, vendeurId: v.vendeur_id || null, qte: v.quantite, prixUnitaire: v.prix_unitaire, date: isoDate(d), heure: hhmm(d),
+      id: v.id, commandeId: v.commande_id || null, clientId: v.client_id, packId: v.pack_id, vendeurId: v.vendeur_id || null, qte: v.quantite, prixUnitaire: v.prix_unitaire, prixCatalogue: v.prix_catalogue ?? null, date: isoDate(d), heure: hhmm(d),
       paiement: v.mode_paiement, statutPaiement: v.statut_paiement || "payee", montantRecu: v.montant_recu ?? null,
       telPaiement: v.telephone_paiement || "", reference: v.reference_paiement || "", payeLe: v.paye_le || null, vendeur: v.vendeur_nom || "",
     };
@@ -1515,7 +1515,7 @@ function construireTicket(data, c, mode) {
     vendeur: v.vendeur ? nomCourt(v.vendeur) : null,
     client: c.client ? nomCourt(c.client.nom) : null,
     canal: c.canal,
-    lignes: (c.lignes || []).map((l) => ({ nom: l.pack?.nom || "Article", quantite: l.qte, prix_unitaire: l.prixUnitaire, total: l.total, pieces_par_lot: l.pack?.pieces || 1, articles: l.pieces })),
+    lignes: (c.lignes || []).map((l) => ({ nom: l.pack?.nom || "Article", quantite: l.qte, prix_unitaire: l.prixUnitaire, prix_normal: l.prixCatalogue > l.prixUnitaire ? l.prixCatalogue : null, total: l.total, pieces_par_lot: l.pack?.pieces || 1, articles: l.pieces })),
     total_articles: c.pieces,
     sous_total: c.sousTotal ?? total,
     frais_livraison: c.frais || 0,
@@ -1752,7 +1752,7 @@ function SaleModal({ open, preset, onClose }) {
     return {
       provisoire: true, boutique: data.boutique || boutiqueParDefaut(), numero: null, date: new Date().toISOString(), statut: "en_attente", type_vente: b2b ? "b2b" : "b2c",
       vendeur: auth?.utilisateur?.nom ? nomCourt(auth.utilisateur.nom) : null, client: nomCourt(nomClient), contact: c.tel.trim(), adresse_livraison: adresseComplete || null, canal: "boutique",
-      lignes: [{ nom: pack.nom, quantite: qte, prix_unitaire: prixU, total: sousTotal, pieces_par_lot: parLot, articles: qte * parLot }], total_articles: qte * parLot,
+      lignes: [{ nom: pack.nom, quantite: qte, prix_unitaire: prixU, prix_normal: pack.prix > prixU ? pack.prix : null, total: sousTotal, pieces_par_lot: parLot, articles: qte * parLot }], total_articles: qte * parLot,
       sous_total: sousTotal, frais_livraison: montantFrais, total,
       paiement: { mode: l.paiement, statut: l.statutPaiement, montant_recu: l.montantRecu, monnaie: l.montantRecu != null ? Math.max(0, l.montantRecu - total) : null, reference: l.reference || null },
       lien: null,

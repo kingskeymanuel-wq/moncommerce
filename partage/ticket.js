@@ -67,12 +67,18 @@ export function lignesTicket(t) {
   if (t.contact) L.push({ k: "ligne", g: "Contact", d: t.contact });
   if (t.adresse_livraison) L.push({ k: "centre", txt: "Livraison : " + t.adresse_livraison });
   L.push({ k: "sep" });
-  let articles = 0;
+  let articles = 0, remises = 0;
   for (const l of t.lignes || []) {
     const parLot = Math.max(1, Number(l.pieces_par_lot) || 1);
     articles += l.articles ?? l.quantite * parLot;
     L.push({ k: "texte", txt: l.nom });
     L.push({ k: "ligne", g: `  ${l.quantite} x ${n(l.prix_unitaire)}`, d: n(l.total) });
+    // Réduction sur cet article : prix normal et montant de la remise
+    if (l.prix_normal > l.prix_unitaire) {
+      const r = (l.prix_normal - l.prix_unitaire) * l.quantite;
+      remises += r;
+      L.push({ k: "ligne", g: `  Prix normal ${n(l.prix_normal)} · remise -${Math.round((1 - l.prix_unitaire / l.prix_normal) * 100)} %`, d: "-" + n(r) });
+    }
     // Lot : nombre d'articles réellement remis (2 lots de 3 = 6 articles)
     if (parLot > 1) L.push({ k: "ligne", g: `  lot de ${parLot}`, d: `${l.quantite * parLot} articles` });
   }
@@ -82,7 +88,9 @@ export function lignesTicket(t) {
     L.push({ k: "ligne", g: "Sous-total", d: n(t.sous_total) });
     L.push({ k: "ligne", g: "Livraison", d: n(t.frais_livraison) });
   }
+  if (remises > 0) L.push({ k: "ligne", g: "Total des remises", d: "-" + n(remises), gras: true });
   L.push({ k: "ligne", g: "TOTAL", d: n(t.total) + " FCFA", grand: true });
+  if (remises > 0) L.push({ k: "centre", txt: "Vous avez économisé " + n(remises) + " FCFA" });
   L.push({ k: "sep" });
   const p = t.paiement || {};
   const payee = !p.statut || p.statut === "payee";

@@ -570,7 +570,7 @@ function PageCommander() {
   const ticketProvisoire = () => ({
     provisoire: true, boutique: config.boutique, numero: null, date: new Date().toISOString(), statut: "en_attente", client: c.nom.trim(), canal: "en_ligne",
     contact: c.telephone.trim(), adresse_livraison: [c.adresse.trim(), c.ville.trim()].filter(Boolean).join(", "),
-    lignes: lignes.map(({ p, quantite }) => ({ nom: p.nom, quantite, prix_unitaire: p.prix, total: p.prix * quantite, pieces_par_lot: p.pieces_par_lot || 1, articles: quantite * (p.pieces_par_lot || 1) })),
+    lignes: lignes.map(({ p, quantite }) => ({ nom: p.nom, quantite, prix_unitaire: p.prix, prix_normal: p.remise > 0 ? p.prix_normal : null, total: p.prix * quantite, pieces_par_lot: p.pieces_par_lot || 1, articles: quantite * (p.pieces_par_lot || 1) })),
     sous_total: t.sousTotal, frais_livraison: t.frais, total: t.total,
     paiement: { mode: mode === "transfert" ? op : mode === "en_ligne" ? "Paiement en ligne" : "À la livraison", statut: mode === "livraison" ? "en_attente" : mode === "transfert" ? "a_verifier" : "en_cours", reference: mode === "transfert" ? tr.reference : null },
     lien: null,
@@ -954,7 +954,7 @@ function PageSuivi({ jeton, ticketSeul }) {
             {c.lignes.map((l, i) => (
               <div key={i} className="row" style={{ gap: 12, padding: "8px 0", borderTop: i ? "1px solid var(--divider)" : 0 }}>
                 <ImageProduit p={l} className="mini" />
-                <div className="grow"><div className="strong">{l.nom}</div><div className="subtle num">{l.quantite} × {fmt(l.prix_unitaire)}</div></div>
+                <div className="grow"><div className="strong">{l.nom}</div><div className="subtle num">{l.quantite} × {fmt(l.prix_unitaire)}{l.prix_normal > l.prix_unitaire ? <> <s>{fmt(l.prix_normal)}</s> · remise −{Math.round((1 - l.prix_unitaire / l.prix_normal) * 100)} %</> : null}</div></div>
                 <div className="num strong">{fmt(l.total)}</div>
               </div>
             ))}

@@ -88,7 +88,9 @@ function ticketCommande(cmd) {
     client: client ? nomCourt(client.nom) : null,
     lignes: lignes.map((l) => {
       const p = packs.get(l.pack_id);
-      return { nom: p?.nom || "Article", sku: p?.sku || null, image: p?.image || null, emoji: p?.emoji || null, teinte: p?.teinte ?? null, quantite: l.quantite, prix_unitaire: l.prix_unitaire, total: l.quantite * l.prix_unitaire,
+      return { nom: p?.nom || "Article", sku: p?.sku || null, image: p?.image || null, emoji: p?.emoji || null, teinte: p?.teinte ?? null, quantite: l.quantite, prix_unitaire: l.prix_unitaire,
+        // Réduction : prix normal du catalogue le jour de la vente, s'il était plus élevé que le prix payé
+        prix_normal: Number(l.prix_catalogue) > l.prix_unitaire ? Number(l.prix_catalogue) : null, total: l.quantite * l.prix_unitaire,
         pieces_par_lot: Math.max(1, Number(p?.pieces_par_lot) || 1), articles: pieces(l) };
     }),
     // Nombre d'articles réellement sortis (2 lots de 3 = 6 articles)
