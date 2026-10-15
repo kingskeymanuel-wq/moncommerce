@@ -1196,14 +1196,15 @@ const NAV = [
   { key: "produits", label: "Produits", icon: Tag, admin: true },
   { key: "stocks", label: "Stocks", icon: Boxes, admin: true, badge: (d) => d.packs.filter((p) => p.actif !== false && p.stock <= seuilDe(p)).length },
   { key: "clients", label: "Clients", icon: Users, admin: true },
-  { key: "depenses", label: "Dépenses", icon: Wallet },
+  { key: "depenses", label: "Dépenses", icon: Wallet, admin: true },
   { key: "ventes", label: "Ventes", icon: Receipt },
   { key: "tickets", label: "Tickets de caisse", icon: FileText, badge: (d) => d.commandes.filter((c) => c.statut !== "annulee" && !c.ticketRemisLe).length },
   { key: "vendeurs", label: "Vendeurs", icon: UserCheck, admin: true },
   { key: "marketing", label: "Marketing", icon: Megaphone, admin: true },
   { key: "finances", label: "Finances", icon: Landmark, admin: true },
 ];
-/* Pages visibles selon le rôle (le vendeur n'a ni stocks, ni marketing, ni finances) */
+/* Pages visibles selon le rôle : le vendeur vend, remet les tickets et suit les livraisons (ni produits, ni prix,
+   ni stocks, ni dépenses, ni marketing, ni finances) */
 const navPour = (estAdmin) => NAV.filter((n) => estAdmin || !n.admin);
 
 /* Vendeur : le serveur ne transmet pas les quantités en stock (9999 = disponible, 0 = rupture) */
@@ -1313,7 +1314,7 @@ function BottomNav({ onMenu }) {
       {item("accueil", "Accueil", Home)}
       {item("commandes", "Commandes", ShoppingCart, badge)}
       <div className="bn-fab-wrap"><button className="bn-fab" onClick={() => openSale()} aria-label="Nouvelle vente"><Plus size={24} strokeWidth={2.5} /></button></div>
-      {estAdmin ? item("clients", "Clients", Users) : item("depenses", "Dépenses", Wallet)}
+      {estAdmin ? item("clients", "Clients", Users) : item("livraisons", "Livraisons", Truck, data.commandes.filter((c) => c.livraison && !["livree", "annulee"].includes(c.statut)).length)}
       <button className="bn-item" onClick={onMenu}><Menu size={21} />Menu</button>
     </nav>
   );
@@ -2445,7 +2446,7 @@ function PageAccueil() {
    PAGE : Commandes (liste)
    ===================================================================== */
 function PageCommandes({ route }) {
-  const { data, update, sync, go, toast, confirm, openSale } = useApp();
+  const { data, update, sync, go, toast, confirm, openSale, estAdmin } = useApp();
   const [tab, setTab] = useState(route.query.statut || "toutes");
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(() => new Set());
@@ -2522,7 +2523,7 @@ function PageCommandes({ route }) {
                 <Btn size="sm" onClick={() => bulk("confirmee")}>Confirmer</Btn>
                 <Btn size="sm" onClick={() => bulk("expediee")}>Expédier</Btn>
                 <Btn size="sm" onClick={() => bulk("livree")}>Livrer</Btn>
-                <Btn size="sm" variant="critical-plain" onClick={() => bulk("annulee")}>Annuler</Btn>
+                {estAdmin && <Btn size="sm" variant="critical-plain" onClick={() => bulk("annulee")}>Annuler</Btn>}
               </div>
             )}
             <table className="table">
@@ -2747,9 +2748,9 @@ function PageCommande({ id }) {
         actions={<>
           <Btn icon={Receipt} onClick={() => setReceipt(true)}>Ticket de caisse</Btn>
           <MoreMenu items={[
-            c.statut === "annulee" && { label: "Rétablir la commande", icon: RotateCcw, onClick: () => setStatut("en_attente") },
+            c.statut === "annulee" && estAdmin && { label: "Rétablir la commande", icon: RotateCcw, onClick: () => setStatut("en_attente") },
             c.statut !== "annulee" && mode === "api" && estAdmin && { label: "Retour ou échange d'article", icon: RotateCcw, onClick: () => setRetour(true) },
-            c.statut !== "annulee" && { label: "Annuler la commande", icon: XCircle, onClick: cancel },
+            c.statut !== "annulee" && estAdmin && { label: "Annuler la commande", icon: XCircle, onClick: cancel },
             c.statut !== "annulee" && c.statut !== "livree" && { label: c.livraison ? "Passer en retrait sur place" : "Passer en livraison", icon: Truck, onClick: () => { patch(() => ({ livraison: !c.livraison })); sync(["PATCH", `/api/commandes/${c.id}/livraison`, { livraison: !c.livraison }]); } },
             ...(estAdmin ? ["sep", { label: "Supprimer", icon: Trash2, tone: "critical", onClick: remove }] : []),
           ]} />
@@ -5051,17 +5052,17 @@ function PageParametres() {
             {estAdmin && <Btn variant="primary" disabled={!boutique.nom.trim() || !boutiqueModifiee} onClick={enregistrerBoutique}>Enregistrer</Btn>}
           </div>
         </Card>
-        {enLigne && <CarteBoutiqueEnLigne estAdmin={estAdmin} />}
+        {enLigne && estAdmin && <CarteBoutiqueEnLigne estAdmin={estAdmin} />}
         <Card title="Apparence" padded={false}>
           <Row title="Thème" sub="Le mode système suit le réglage de votre appareil.">
             <Segmented value={settings.theme} onChange={(theme) => setSettings({ ...settings, theme })} options={[{ value: "systeme", label: "Système", icon: Monitor }, { value: "clair", label: "Clair", icon: Sun }, { value: "sombre", label: "Sombre", icon: Moon }]} />
           </Row>
         </Card>
-        <Card title="Connexion" padded={false}>
+        {estAdmin && <Card title="Connexion" padded={false}>
           <Row title={enLigne ? "Connecté au serveur" : "Mode démo (hors ligne)"} sub={enLigne ? `API : ${API_BASE || location.origin} · base de données partagée entre vos appareils` : "Les données restent dans ce navigateur. Démarrez le serveur (dossier backend) pour les partager."}>
             {enLigne ? <Badge tone="success" dot>En ligne</Badge> : <Btn icon={RotateCcw} onClick={() => window.location.reload()}>Rechercher le serveur</Btn>}
           </Row>
-        </Card>
+        </Card>}
         {enLigne && estAdmin && (
           <Card title="Équipe" padded={false}>
             <Row title="Vendeurs" sub="Créez les comptes de vos vendeurs et suivez leurs ventes."><Btn icon={UserCheck} onClick={() => go("vendeurs")}>Gérer mes vendeurs</Btn><Btn icon={UserPlus} onClick={() => setEquipeOpen(true)}>Ajouter</Btn></Row>

@@ -65,11 +65,14 @@ router.get("/:id", (req, res) => {
 
 // PATCH /api/commandes/:id/statut — { statut: "expediee" }
 // Une annulation remet les articles en stock ; un rétablissement les retire.
+/** Annuler ou rétablir une commande fait bouger le stock : seul l'administrateur le peut. */
+const annulationInterdite = (cmd, statut, req) => req.user?.role !== "admin" && (statut === "annulee" || cmd?.statut === "annulee");
 router.patch("/:id/statut", (req, res) => {
   const { statut } = req.body;
   if (!STATUTS_VALIDES.includes(statut)) {
     return res.status(400).json({ erreur: `statut doit être l'un de : ${STATUTS_VALIDES.join(", ")}` });
   }
+  if (annulationInterdite(lire(req.params.id), statut, req)) return res.status(403).json({ erreur: "Seul l'administrateur peut annuler ou rétablir une commande" });
   const cmd = db.transaction(() => changerStatut(req.params.id, statut, req.user?.id))();
   if (!cmd) return res.status(404).json({ erreur: "Commande introuvable" });
   res.json(enrichir(cmd));
@@ -82,7 +85,8 @@ router.post("/statut", (req, res) => {
   if (!STATUTS_VALIDES.includes(statut)) {
     return res.status(400).json({ erreur: `statut doit être l'un de : ${STATUTS_VALIDES.join(", ")}` });
   }
-  const autorises = ids.map(String).filter((id) => { const c = lire(id); return c && aMoi(c, req); });
+  if (statut === "annulee" && req.user?.role !== "admin") return res.status(403).json({ erreur: "Seul l'administrateur peut annuler une commande" });
+  const autorises = ids.map(String).filter((id) => { const c = lire(id); return c && aMoi(c, req) && !annulationInterdite(c, statut, req); });
   const modifiees = db.transaction(() => autorises.map((id) => changerStatut(id, statut, req.user?.id)).filter(Boolean))();
   res.json({ modifiees: modifiees.length });
 });

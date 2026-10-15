@@ -10,3 +10,6 @@ backend/uploads/
 
 # Éditeur
 .idea/
+
+# Interfaces préparées pour le navigateur (npm run construire)
+*.min.js
