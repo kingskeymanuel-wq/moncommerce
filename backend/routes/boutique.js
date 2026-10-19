@@ -253,6 +253,7 @@ router.post("/commandes", limiteCommandes, espacePublic, async (req, res) => {
         jeton, frais, client.telephone, client.email || null, maintenant);
       ajouterEvenement(commandeId, { statut: "en_attente", texte: "Commande passée sur la boutique en ligne", date: maintenant });
       if (modePaiement === "transfert" && vendeurId && moyensVendeur.transfert(vendeurId).length) db.prepare("UPDATE ventes SET sur_compte_vendeur = 1 WHERE commande_id = ?").run(commandeId);
+      require("../lib/zones").attribuer(commandeId); // colis à livrer : livreur de la zone
       genererTicket(commandeId, vendeurId, maintenant);
       if (modePaiement === "transfert") {
         ajouterEvenement(commandeId, { type: "paiement", texte: `Transfert ${champsPaiement.mode} déclaré par le client (réf. ${champsPaiement.reference}) — à vérifier`, date: maintenant });
