@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="22" fill="#17110B"/>
+  <g transform="translate(50 50) scale(0.86) translate(-50 -50)"><circle cx="50" cy="50" r="43" fill="none" stroke="#E2B657" stroke-width="3.5"/>
+      <text x="50" y="63" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="40" fill="#F4EFE6">I<tspan fill="#E2B657">S</tspan></text></g></svg>
