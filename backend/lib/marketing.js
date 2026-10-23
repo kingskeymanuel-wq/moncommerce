@@ -14,7 +14,7 @@ const { envoyerEmail, estConfigure: emailConfigure, echapper } = require("./emai
 const { lireBoutique } = require("../routes/parametres");
 const { promoActive, prixEffectif, remisePourcent } = require("./prix");
 
-const smsConfigure = () => Boolean(process.env.SMS_PROVIDER_URL && process.env.SMS_PROVIDER_API_KEY);
+const smsConfigure = () => require("./sms").estConfigure();
 const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
 const fmt = (n) => nf.format(Math.round(n || 0)).replace(/ | /g, " ") + " FCFA";
 const urlBase = () => (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 4000}`).replace(/\/$/, "");
