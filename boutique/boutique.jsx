@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import {
   ShoppingBag, ShoppingCart, Search, X, Plus, Minus, Trash2, ArrowLeft, ArrowRight, Check, CheckCircle2, Clock,
   Truck, PackageCheck, XCircle, Phone, MapPin, Mail, MessageSquare, ShieldCheck, Smartphone, CreditCard, Banknote,
-  Copy, Download, Printer, AlertCircle, AlertTriangle, Info, Receipt, Store, User, ChevronRight, Loader2, Sparkles, Package, Tag, FileText, BellOff, Bell, LayoutDashboard, ChevronDown, UserPlus,
+  Copy, Download, Printer, AlertCircle, AlertTriangle, Info, Receipt, Store, User, ChevronRight, Loader2, Sparkles, Package, Tag, FileText, BellOff, Bell, LayoutDashboard, ChevronDown, UserPlus, Send,
 } from "lucide-react";
 import { fmt, fmtNum, lignesTicket, telechargerTicketPdf, urlTicketPdf, pdfIntegrable, genererQr, cheminQr, lienTicket, telInternational } from "/partage/ticket.js";
 
@@ -245,6 +245,39 @@ function PiedDePage() {
   );
 }
 
+/* « Écrire à la boutique » : le message arrive à l'agent Messages de la boutique */
+function ContactBoutique({ slug, nomBoutique }) {
+  const { toast } = useBoutique();
+  const [f, setF] = useState({ nom: "", coordonnee: "", message: "" });
+  const [etat, setEtat] = useState(""); // "" | envoi | envoye
+  const envoyer = async (e) => {
+    e.preventDefault();
+    const c = f.coordonnee.trim();
+    setEtat("envoi");
+    try {
+      await api("POST", "/api/boutique/contact", { boutique: slug, nom: f.nom.trim(), message: f.message.trim(), ...(c.includes("@") ? { email: c } : { telephone: c }) });
+      setEtat("envoye");
+    } catch (err) { setEtat(""); toast({ titre: "Message non envoyé", desc: err.message, ton: "critical" }); }
+  };
+  return (
+    <section className="v-section g-contact">
+      <div className="g-contact-carte">
+        <div><h2><MessageSquare size={20} /> Écrire à {nomBoutique}</h2><p className="muted">Une question sur un produit, une livraison ? La boutique vous répond rapidement.</p></div>
+        {etat === "envoye" ? <div className="banner banner-success"><CheckCircle2 size={16} /><div><b>Message envoyé.</b> {nomBoutique} vous répondra très vite.</div></div> : (
+          <form onSubmit={envoyer} className="stack">
+            <div className="g-contact-champs">
+              <Field label="Votre nom"><Input icon={User} value={f.nom} onChange={(e) => setF({ ...f, nom: e.target.value })} required minLength={2} /></Field>
+              <Field label="E-mail ou téléphone" help="Pour vous répondre."><Input icon={Phone} value={f.coordonnee} onChange={(e) => setF({ ...f, coordonnee: e.target.value })} required /></Field>
+            </div>
+            <Field label="Votre message"><textarea className="textarea" rows={3} value={f.message} onChange={(e) => setF({ ...f, message: e.target.value })} required minLength={8} /></Field>
+            <div className="row" style={{ justifyContent: "flex-end" }}><Btn type="submit" variant="primary" icon={Send} loading={etat === "envoi"}>Envoyer</Btn></div>
+          </form>
+        )}
+      </div>
+    </section>
+  );
+}
+
 /* =====================================================================
    Accueil : bannière + catalogue
    ===================================================================== */
@@ -374,6 +407,7 @@ function PageAccueil({ slug }) {
           <div className="v-grille">{liste.map((p, i) => <CarteProduit key={p.id} p={p} i={i} />)}</div>
         )}
       </section>
+      {slug && config.contact && !recherche && <ContactBoutique slug={slug} nomBoutique={b.nom} />}
     </>
   );
 }
