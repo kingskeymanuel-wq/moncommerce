@@ -119,6 +119,8 @@ function ouvrirEspace(fichier) {
 
   // v6 : un vendeur peut être désactivé par son administrateur (son historique est conservé)
   ajouterColonne("utilisateurs", "actif", "INTEGER NOT NULL DEFAULT 1");
+  // Version des sessions : augmentée à chaque changement de mot de passe ou désactivation → anciennes connexions refusées
+  ajouterColonne("utilisateurs", "sessions_version", "INTEGER NOT NULL DEFAULT 0");
 
   // v7 : catégories et lots, tickets de caisse numérotés et suivis, ventes B2B
   ajouterColonne("packs", "categorie", "TEXT");
