@@ -107,7 +107,9 @@ async function redigerCampagne({ type = "newsletter", consigne = "", canaux = ["
       systeme: `Tu rédiges les messages marketing d'une boutique en Côte d'Ivoire, envoyés à ses clients qui ont accepté de les recevoir. Tu écris en français simple, chaleureux et direct, sans majuscules abusives et sans promesse que la boutique ne peut pas tenir. Tu n'inventes ni produit, ni prix, ni remise : tu n'utilises que les informations fournies. Tu réponds uniquement par le texte du message, sans guillemets ni commentaire.`,
       demande: `${f.texte}\n\nType de message : ${t.nom}.\nConsigne de l'administrateur : ${consigne.trim() || t.consigne}\n\nContraintes :\n- Commence par « Bonjour {prenom} » (garde exactement {prenom} : il sera remplacé par le prénom de chaque client).\n- Termine en invitant à visiter la boutique avec exactement {lien} (il sera remplacé par l'adresse de la boutique).\n- ${court ? "Longueur : 280 caractères au maximum, car le message part aussi par SMS." : "Longueur : 3 à 5 phrases."}\n- Un seul paragraphe, sans liste ni émoji.`,
     });
-    const message = texte.replace(/\s+/g, " ").replace(/^["«»\s]+|["«»\s]+$/g, "").trim();
+    // Les petits modèles écrivent souvent [prenom], {{lien}}, <prénom>… : on ramène tout à {prenom} / {lien}
+    const message = texte.replace(/\s+/g, " ").replace(/^["«»\s]+|["«»\s]+$/g, "")
+      .replace(/[[{(<]{1,2}\s*pr[ée]nom\s*[\]})>]{1,2}/gi, "{prenom}").replace(/[[{(<]{1,2}\s*lien\s*[\]})>]{1,2}/gi, "{lien}").trim();
     return { message: /\{lien\}/.test(message) ? message : `${message} {lien}`, ia: true };
   } catch (e) {
     console.error("Agent campagnes : rédaction par IA impossible —", e.message);
