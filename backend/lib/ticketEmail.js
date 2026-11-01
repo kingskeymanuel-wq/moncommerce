@@ -21,7 +21,8 @@ function ticketEmail(t, lien) {
     <hr style="border:0;border-top:1px dashed #bbb">
     <div style="text-align:center"><b>${t.canal === "en_ligne" ? "BON DE COMMANDE EN LIGNE" : "TICKET DE CAISSE"}</b></div>
     <table style="width:100%;font-size:13px"><tr><td>N° ${echapper(t.numero)}</td><td style="text-align:right">${date}</td></tr>
-      ${t.client ? `<tr><td>Client</td><td style="text-align:right">${echapper(t.client)}</td></tr>` : ""}</table>
+      ${t.client ? `<tr><td>Client</td><td style="text-align:right">${echapper(t.client)}</td></tr>` : ""}
+      ${t.vendeur ? `<tr><td>Vendeur</td><td style="text-align:right">${echapper(t.vendeur)}</td></tr>` : ""}</table>
     <hr style="border:0;border-top:1px dashed #bbb">
     <table style="width:100%;font-size:13px">${lignes}</table>
     <hr style="border:0;border-top:1px dashed #bbb">
@@ -33,11 +34,11 @@ function ticketEmail(t, lien) {
       <tr><td>Statut</td><td style="text-align:right">${STATUTS_PAIEMENT[p.statut] || "Payé"}</td></tr>
     </table>
     <hr style="border:0;border-top:1px dashed #bbb">
-    <p style="text-align:center;font-family:Arial,sans-serif"><a href="${lien}" style="display:inline-block;background:#008060;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Voir et télécharger le ticket (PDF)</a></p>
+    <p style="text-align:center;font-family:Arial,sans-serif"><a href="${lien}" style="display:inline-block;background:#1D4ED8;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Voir et télécharger le ticket (PDF)</a></p>
     <p style="text-align:center;color:#555">${echapper(t.boutique.message || "Merci pour votre achat !")}</p>
   </div>`;
   const texte = [
-    t.boutique.nom, `${t.canal === "en_ligne" ? "Bon de commande" : "Ticket de caisse"} ${t.numero} — ${date}`, "",
+    t.boutique.nom, `${t.canal === "en_ligne" ? "Bon de commande" : "Ticket de caisse"} ${t.numero} — ${date}`, t.vendeur ? `Vendeur : ${t.vendeur}` : null, "",
     ...t.lignes.map((l) => `${l.nom} : ${l.quantite} × ${n(l.prix_unitaire)} = ${n(l.total)}${l.prix_normal > l.prix_unitaire ? ` (prix normal ${n(l.prix_normal)}, remise de ${n((l.prix_normal - l.prix_unitaire) * l.quantite)})` : ""}`),
     t.frais_livraison > 0 ? `Livraison : ${n(t.frais_livraison)}` : null,
     `TOTAL : ${n(t.total)} FCFA`, `Paiement : ${p.statut === "en_attente" ? "à la livraison" : p.mode} (${STATUTS_PAIEMENT[p.statut] || "Payé"})`, "",
