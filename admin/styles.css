@@ -1,40 +1,40 @@
 /* =====================================================================
-   Ivoire Shop — système de design : ivoire, encre brun-noir, or (refonte Claude + Codex)
+   Ivoire Shop — système de design : bleu nuit, bleu roi et vert émeraude
    ===================================================================== */
 
-/* ---------- Jetons : thème clair — ivoire, encre brun-noir, or GOUABO ---------- */
+/* ---------- Jetons : thème clair — blanc bleuté, bleu roi, vert émeraude ---------- */
 :root {
-  --bg: #F5F1E9;
-  --surface: #FFFCF7;
-  --surface-2: #F8F3EA;
-  --surface-3: #EEE7DB;
-  --hover: #F2EBDD;
-  --pressed: #E9DFCF;
-  --sidebar: #EFE8DC;
-  --sidebar-hover: #E6DDCE;
-  --sidebar-active: #FFFCF7;
-  --border: #DDD3C4;
-  --border-strong: #B9AC99;
-  --divider: #E8E0D4;
+  --bg: #F3F7FC;
+  --surface: #FFFFFF;
+  --surface-2: #F5F8FD;
+  --surface-3: #E8EFF8;
+  --hover: #EDF3FB;
+  --pressed: #DFE9F6;
+  --sidebar: #EAF1FA;
+  --sidebar-hover: #DEE8F5;
+  --sidebar-active: #FFFFFF;
+  --border: #D5DFEC;
+  --border-strong: #A8B6CA;
+  --divider: #E3EAF3;
 
-  --text: #241F19;       /* 15:1 sur la surface */
-  --text-2: #625B51;     /* 6,1:1 */
-  --text-3: #756D63;     /* 4,7:1 : lisible, même en petit */
+  --text: #0F1E36;       /* 15:1 sur la surface */
+  --text-2: #4A5A73;     /* 6,1:1 */
+  --text-3: #5F6E86;     /* 4,7:1 : lisible, même en petit */
 
-  --topbar: #211D18;
-  --topbar-2: #302A22;
-  --topbar-text: #FFF9F0;
+  --topbar: #0B2545;
+  --topbar-2: #13315C;
+  --topbar-text: #F4F8FF;
 
-  /* L'or est la signature ; les actions utilisent un brun-or foncé, lisible avec du texte blanc (7:1) */
-  --primary: #6B4B0B;
-  --primary-hover: #513806;
+  /* Le bleu roi est la signature, le vert émeraude l'accent ; texte blanc lisible sur les actions (6,7:1) */
+  --primary: #1D4ED8;
+  --primary-hover: #1E40AF;
   --primary-text: #FFFFFF;
-  --brand: #C9962F;
-  --brand-strong: #6B4B0B;
-  --brand-soft: #F7E8C1;
-  --brand-text: #241F19; /* texte posé sur l'or */
-  --link: #5E430C;
-  --focus: #9A7019;
+  --brand: #2563EB;
+  --brand-strong: #1D4ED8;
+  --brand-soft: #DBEAFE;
+  --brand-text: #FFFFFF; /* texte posé sur le bleu */
+  --link: #1D4ED8;
+  --focus: #2563EB;
 
   --success: #1F5E3B;   --success-bg: #E1F2E7;  --success-dot: #26734A;
   --info: #175A80;      --info-bg: #E1F1F8;     --info-dot: #287AA4;
@@ -44,8 +44,8 @@
   --critical-solid: #A52D3D;
   --neutral: #564F46;   --neutral-bg: #ECE6DC;  --neutral-dot: #8B8277;
 
-  --c-blue: #287AA4;
-  --c-green: #26734A;
+  --c-blue: #2563EB;
+  --c-green: #059669;
   --c-gold: #B77A08;
   --c-purple: #7056A4;
   --c-gray: #8B8277;
@@ -62,12 +62,12 @@
   --tint-6: #ececec; --tint-6-t: #3d3d3d;
   --tint-7: #ffe8c9; --tint-7-t: #7a3f00;
 
-  --shadow-card: 0 0 0 1px rgba(36, 31, 25, .06), 0 1px 2px rgba(36, 31, 25, .05), 0 8px 24px -12px rgba(36, 31, 25, .10);
-  --shadow-hover: 0 0 0 1px rgba(36, 31, 25, .08), 0 10px 28px -10px rgba(36, 31, 25, .18);
-  --shadow-pop: 0 0 0 1px rgba(36, 31, 25, .08), 0 18px 42px -10px rgba(36, 31, 25, .24);
-  --shadow-modal: 0 0 0 1px rgba(36, 31, 25, .08), 0 28px 70px -14px rgba(20, 16, 11, .34);
+  --shadow-card: 0 0 0 1px rgba(15, 30, 54, .06), 0 1px 2px rgba(15, 30, 54, .05), 0 8px 24px -12px rgba(15, 30, 54, .10);
+  --shadow-hover: 0 0 0 1px rgba(15, 30, 54, .08), 0 10px 28px -10px rgba(15, 30, 54, .18);
+  --shadow-pop: 0 0 0 1px rgba(15, 30, 54, .08), 0 18px 42px -10px rgba(15, 30, 54, .24);
+  --shadow-modal: 0 0 0 1px rgba(15, 30, 54, .08), 0 28px 70px -14px rgba(8, 18, 36, .34);
   --btn-primary-shadow: inset 0 -1px 0 1px rgba(0, 0, 0, .35), inset 0 .5px 0 1.5px rgba(255, 255, 255, .18);
-  --btn-secondary-shadow: inset 0 -1px 0 0 #B9AC99, inset 0 0 0 1px rgba(36, 31, 25, .10), inset 0 .5px 0 1.5px #FFFCF7;
+  --btn-secondary-shadow: inset 0 -1px 0 0 #A8B6CA, inset 0 0 0 1px rgba(15, 30, 54, .10), inset 0 .5px 0 1.5px #FFFFFF;
 
   --radius-xl: 20px;
   --radius-lg: 16px;
@@ -86,35 +86,35 @@
 
 /* ---------- Jetons : thème sombre — brun-noir et or ---------- */
 :root[data-theme="dark"] {
-  --bg: #16130F;
-  --surface: #211D18;
-  --surface-2: #2A251F;
-  --surface-3: #373027;
-  --hover: #312A22;
-  --pressed: #40372C;
-  --sidebar: #15120F;
-  --sidebar-hover: #28221B;
-  --sidebar-active: #383027;
-  --border: #4A4035;
-  --border-strong: #706353;
-  --divider: #383027;
+  --bg: #0A1222;
+  --surface: #111C31;
+  --surface-2: #16233C;
+  --surface-3: #1F2F4D;
+  --hover: #1A2A46;
+  --pressed: #243758;
+  --sidebar: #08101E;
+  --sidebar-hover: #152340;
+  --sidebar-active: #1F2F4D;
+  --border: #2A3D5E;
+  --border-strong: #47608A;
+  --divider: #1F2F4D;
 
-  --text: #FFF9F0;
-  --text-2: #D6CDC1;
-  --text-3: #B9B0A5;
+  --text: #F1F6FF;
+  --text-2: #C3D0E4;
+  --text-3: #A2B1C9;
 
-  --topbar: #15120F;
-  --topbar-2: #28221B;
+  --topbar: #08101E;
+  --topbar-2: #152340;
 
-  --primary: #E7BE67;
-  --primary-hover: #F2D386;
-  --primary-text: #241F19;
-  --brand: #E7BE67;
-  --brand-strong: #E7BE67;
-  --brand-soft: #4A3918;
-  --brand-text: #241F19;
-  --link: #F1C86E;
-  --focus: #F1C86E;
+  --primary: #7AB0FF;
+  --primary-hover: #A3C8FF;
+  --primary-text: #08101E;
+  --brand: #6EA8FF;
+  --brand-strong: #7AB0FF;
+  --brand-soft: #1C3360;
+  --brand-text: #08101E;
+  --link: #8EBBFF;
+  --focus: #8EBBFF;
 
   --success: #9ED5AE;   --success-bg: #1E3C2B;  --success-dot: #9ED5AE;
   --info: #A8D6ED;      --info-bg: #183A4D;     --info-dot: #A8D6ED;
@@ -124,8 +124,8 @@
   --critical-solid: #E78492;
   --neutral: #D2C8BC;   --neutral-bg: #393129;  --neutral-dot: #AAA095;
 
-  --c-blue: #79BDE0;
-  --c-green: #8CCD9E;
+  --c-blue: #7AB0FF;
+  --c-green: #5EE0A8;
   --c-gold: #E7BE67;
   --c-purple: #BDA9E8;
   --c-gray: #AAA095;
@@ -142,12 +142,12 @@
   --tint-6: rgba(255, 255, 255, .08); --tint-6-t: #d4d4d4;
   --tint-7: rgba(255, 145, 0, .22);  --tint-7-t: #ffc68a;
 
-  --shadow-card: 0 0 0 1px rgba(255, 249, 240, .06), 0 1px 2px rgba(0, 0, 0, .4);
-  --shadow-hover: 0 0 0 1px rgba(255, 249, 240, .1), 0 8px 20px -6px rgba(0, 0, 0, .6);
-  --shadow-pop: 0 0 0 1px rgba(255, 249, 240, .08), 0 16px 36px -8px rgba(0, 0, 0, .7);
-  --shadow-modal: 0 0 0 1px rgba(255, 249, 240, .08), 0 32px 64px -16px rgba(0, 0, 0, .8);
+  --shadow-card: 0 0 0 1px rgba(241, 246, 255, .06), 0 1px 2px rgba(0, 0, 0, .4);
+  --shadow-hover: 0 0 0 1px rgba(241, 246, 255, .1), 0 8px 20px -6px rgba(0, 0, 0, .6);
+  --shadow-pop: 0 0 0 1px rgba(241, 246, 255, .08), 0 16px 36px -8px rgba(0, 0, 0, .7);
+  --shadow-modal: 0 0 0 1px rgba(241, 246, 255, .08), 0 32px 64px -16px rgba(0, 0, 0, .8);
   --btn-primary-shadow: inset 0 -1px 0 1px rgba(0, 0, 0, .25), inset 0 .5px 0 1px rgba(255, 255, 255, .45);
-  --btn-secondary-shadow: inset 0 0 0 1px #4A4035, inset 0 1px 0 rgba(255, 249, 240, .06);
+  --btn-secondary-shadow: inset 0 0 0 1px #2A3D5E, inset 0 1px 0 rgba(241, 246, 255, .06);
 
   color-scheme: dark;
 }
@@ -237,9 +237,9 @@ kbd {
 .brand-mark {
   width: 30px; height: 30px; border-radius: 9px;
   display: grid; place-items: center;
-  background: linear-gradient(135deg, #E7BE67, #B8862B);
-  color: #241F19;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 2px 6px rgba(184, 134, 43, .45);
+  background: linear-gradient(135deg, #3B82F6, #10B981);
+  color: #FFFFFF;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 2px 6px rgba(37, 99, 235, .45);
 }
 
 .topbar-search {
@@ -1065,7 +1065,7 @@ a.list-item { color: inherit; }
   animation: toastIn .38s var(--spring) both;
 }
 .toast.leaving { animation: toastOut .2s var(--ease) both; }
-.toast-icon { color: #E7BE67; flex-shrink: 0; }
+.toast-icon { color: #34D399; flex-shrink: 0; }
 .toast-critical .toast-icon { color: #ff6b6b; }
 .toast-info .toast-icon { color: #6ea8ff; }
 .toast-text { flex: 1; min-width: 0; font-size: 13px; }
@@ -1178,9 +1178,11 @@ a.list-item { color: inherit; }
   padding: 48px;
   display: flex; flex-direction: column; justify-content: space-between;
   color: #fff;
-  background: radial-gradient(1200px 600px at -10% -10%, #1f7a5c 0%, transparent 55%),
-              radial-gradient(900px 500px at 110% 110%, #3b2f8f 0%, transparent 55%),
-              #0e1411;
+  /* bleu nuit, bleu roi et vert émeraude, sur la photo d'une cliente (backend/outils/rapatrier-photos.js) */
+  background: radial-gradient(900px 500px at 110% -10%, rgba(16, 185, 129, .55) 0%, transparent 55%),
+              linear-gradient(160deg, rgba(11, 37, 69, .94) 0%, rgba(19, 59, 122, .86) 55%, rgba(14, 110, 92, .82) 100%),
+              url(/partage/photos/1758525223677-b718f428fc87-640x760.jpg) center / cover,
+              #0B2545;
 }
 .auth-hero::after {
   content: ""; position: absolute; inset: 0;
@@ -1191,10 +1193,10 @@ a.list-item { color: inherit; }
 }
 .auth-hero > * { position: relative; z-index: 1; }
 .auth-hero h1 { font-size: 40px; line-height: 1.1; letter-spacing: -1.2px; font-weight: 800; max-width: 460px; animation: fadeUp .6s .1s var(--ease-out) both; }
-.auth-hero h1 em { font-style: normal; background: linear-gradient(90deg, #5ef0b6, #a78bfa); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.auth-hero p { color: #b9c6c0; max-width: 420px; margin-top: 14px; font-size: 15px; animation: fadeUp .6s .2s var(--ease-out) both; }
+.auth-hero h1 em { font-style: normal; background: linear-gradient(90deg, #93C5FD, #6EE7B7); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.auth-hero p { color: #D6E4F7; max-width: 420px; margin-top: 14px; font-size: 15px; animation: fadeUp .6s .2s var(--ease-out) both; }
 .auth-feats { display: flex; flex-direction: column; gap: 10px; margin-top: 28px; }
-.auth-feats div { display: flex; align-items: center; gap: 10px; color: #dfe7e3; font-size: 14px; animation: fadeUp .5s var(--ease-out) both; animation-delay: calc(.3s + var(--i) * .08s); }
+.auth-feats div { display: flex; align-items: center; gap: 10px; color: #E6EEFA; font-size: 14px; animation: fadeUp .5s var(--ease-out) both; animation-delay: calc(.3s + var(--i) * .08s); }
 .auth-feats span { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: rgba(255, 255, 255, .1); }
 .auth-float {
   align-self: flex-start;
@@ -1206,10 +1208,10 @@ a.list-item { color: inherit; }
   backdrop-filter: blur(12px);
   animation: floaty 6s ease-in-out infinite, fadeUp .7s .5s var(--ease-out) both;
 }
-.auth-float small { color: #b9c6c0; }
+.auth-float small { color: #D6E4F7; }
 .auth-float strong { display: block; font-size: 24px; margin: 2px 0 10px; font-variant-numeric: tabular-nums; }
 .auth-float .mini-bars { display: flex; gap: 5px; align-items: flex-end; height: 44px; }
-.auth-float .mini-bars i { flex: 1; border-radius: 3px; background: linear-gradient(180deg, #5ef0b6, #1f7a5c); transform-origin: bottom; animation: growBar .9s var(--ease-out) both; animation-delay: calc(.7s + var(--i) * .07s); }
+.auth-float .mini-bars i { flex: 1; border-radius: 3px; background: linear-gradient(180deg, #6EE7B7, #2563EB); transform-origin: bottom; animation: growBar .9s var(--ease-out) both; animation-delay: calc(.7s + var(--i) * .07s); }
 .auth-side { display: grid; place-items: center; padding: 32px 20px; }
 .auth-card { width: 100%; max-width: 400px; animation: fadeUp .5s var(--ease-out) both; }
 .auth-card .card-body { padding: 28px; }
@@ -1597,15 +1599,15 @@ html, body { font-size: 14.5px; }
 /* Focus visible : anneau or, jamais seulement un changement de bordure */
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
-/* Éléments posés sur l'or : texte foncé (contraste suffisant) */
+/* Éléments posés sur la couleur de marque : texte de --brand-text (contraste suffisant) */
 .step.done .step-dot, .pick-check, .sale-step-title .n.ok { color: var(--brand-text); }
 
-/* Bouton « Vente » de la barre du bas : le seul élément doré */
+/* Bouton « Vente » de la barre du bas : dégradé bleu-vert de la marque */
 @media (max-width: 1023px) {
-  .bn-fab { background: linear-gradient(135deg, #E7BE67, #B8862B); color: #241F19; box-shadow: 0 8px 20px -6px rgba(184, 134, 43, .65), inset 0 1px 0 rgba(255, 255, 255, .35); }
+  .bn-fab { background: linear-gradient(135deg, #2563EB, #059669); color: #FFFFFF; box-shadow: 0 8px 20px -6px rgba(37, 99, 235, .6), inset 0 1px 0 rgba(255, 255, 255, .35); }
 }
 
-/* Barre latérale : entrée active marquée par un filet or */
+/* Barre latérale : entrée active marquée par un filet bleu */
 .nav-item.active { background: var(--sidebar-active); box-shadow: var(--shadow-card); }
 .nav-item.active::before { background: var(--brand); }
 
@@ -1631,16 +1633,16 @@ html, body { font-size: 14.5px; }
 .top-produit { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: none; border: 0; padding: 6px; margin: -6px; border-radius: var(--radius-sm); color: inherit; font: inherit; cursor: pointer; }
 .top-produit:hover { background: var(--hover); }
 
-/* Fond de l'application : ivoire chaud, halos de lumière très doux (or en haut à droite, sauge en bas à gauche) */
+/* Fond de l'application : blanc bleuté, halos de lumière très doux (bleu en haut à droite, vert en bas à gauche) */
 :root {
-  --fond-halo-1: rgba(226, 182, 87, .22);
-  --fond-halo-2: rgba(120, 160, 128, .14);
-  --fond-halo-3: rgba(255, 252, 245, .9);
+  --fond-halo-1: rgba(59, 130, 246, .16);
+  --fond-halo-2: rgba(16, 185, 129, .12);
+  --fond-halo-3: rgba(255, 255, 255, .9);
 }
 :root[data-theme="dark"] {
-  --fond-halo-1: rgba(231, 190, 103, .12);
-  --fond-halo-2: rgba(110, 150, 120, .08);
-  --fond-halo-3: rgba(255, 249, 240, .03);
+  --fond-halo-1: rgba(110, 168, 255, .12);
+  --fond-halo-2: rgba(52, 211, 153, .08);
+  --fond-halo-3: rgba(241, 246, 255, .03);
 }
 body::before {
   content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
@@ -1680,7 +1682,7 @@ body { background: transparent; }
   .rapport-impression .rapport { font-size: 11.5px; }
   .rapport-impression .rapport td, .rapport-impression .rapport th { border-bottom-color: #ccc; padding: 4px 3px; }
   .rapport-impression .rapport .gris, .rapport-impression .rapport h3 { color: #555; }
-  .rapport-impression .rapport-tete { border-bottom-color: #B8862B; }
+  .rapport-impression .rapport-tete { border-bottom-color: #2563EB; }
   .rapport-impression h3, .rapport-impression tr { break-inside: avoid; }
 }
 

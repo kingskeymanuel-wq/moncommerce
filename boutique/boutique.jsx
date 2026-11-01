@@ -307,6 +307,103 @@ function CarteProduit({ p, i }) {
   );
 }
 
+// Photos d'illustration servies par le site (backend/outils/rapatrier-photos.js)
+const photo = (id, l, h) => `/partage/photos/${id}-${l}x${h}.jpg`;
+const PHOTOS = {
+  cliente: photo("1758525223677-b718f428fc87", 640, 760), paiement: photo("1758876202400-64edbefc2256", 520, 420), client: photo("1605896163420-830698e44fb1", 520, 420),
+  livraison: photo("1667844141318-ee2ba9d088d6", 640, 520), creatrices: photo("1773864931052-ea56474bcc84", 760, 560),
+};
+// Univers de la page d'accueil : un clic choisit la catégorie qui contient l'un des mots, sinon montre tout le catalogue
+const UNIVERS = [
+  { nom: "Mode & wax", texte: "Tenues, pagnes, sacs", mots: ["mode", "vêtement", "pagne", "wax", "habit", "sac", "chaussure"], img: photo("1687052093309-7a14efa58ecb", 480, 600) },
+  { nom: "Beauté & soins", texte: "Cheveux, peau, parfums", mots: ["beauté", "soin", "cosmét", "cheveu", "parfum", "maquill"], img: photo("1646457417181-cb62c7194d39", 480, 600) },
+  { nom: "Marché & cuisine", texte: "Produits frais et épicerie", mots: ["aliment", "épicerie", "cuisine", "marché", "boisson", "fruit"], img: photo("1773858441140-613eb79ccd27", 480, 600) },
+  { nom: "Téléphones & high-tech", texte: "Smartphones, accessoires", mots: ["téléphone", "phone", "électron", "accessoire", "informatique", "high"], img: photo("1739271933163-8dcc7c8e8a3e", 480, 600) },
+];
+
+function HeroPlateforme({ nbBoutiques, versProduits }) {
+  return (
+    <section className="i-hero">
+      <div className="i-hero-in">
+        <div className="i-hero-texte">
+          <span className="i-pastille"><Sparkles size={14} />Le marché en ligne de Côte d'Ivoire</span>
+          <h1>Tout ce que vous aimez,<br /><em>livré chez vous.</em></h1>
+          <p>Les produits de {nbBoutiques > 1 ? `${nbBoutiques} boutiques` : "nos boutiques"} au même endroit : mode, beauté, maison, high-tech. Commandez en deux minutes, payez par Mobile Money ou à la livraison.</p>
+          <div className="i-hero-actions">
+            <button className="i-btn i-btn-blanc" onClick={versProduits}><ShoppingBag size={18} />Voir les produits</button>
+            <a className="i-btn i-btn-verre" href="/admin/?creer=1"><Store size={17} />Ouvrir ma boutique</a>
+          </div>
+          <ul className="i-hero-preuves">
+            <li><CheckCircle2 size={15} />Orange, MTN, Moov, Wave</li>
+            <li><CheckCircle2 size={15} />Paiement à la livraison</li>
+            <li><CheckCircle2 size={15} />Suivi de commande</li>
+          </ul>
+        </div>
+        <div className="i-mosaique" aria-hidden="true">
+          <img className="i-m1" src={PHOTOS.cliente} alt="" loading="eager" />
+          <img className="i-m2" src={PHOTOS.paiement} alt="" loading="eager" />
+          <img className="i-m3" src={PHOTOS.client} alt="" loading="eager" />
+          <div className="i-bulle i-b1"><span className="i-bulle-ic vert"><CheckCircle2 size={15} /></span><span><b>Paiement reçu</b><small>Wave · 18 500 FCFA</small></span></div>
+          <div className="i-bulle i-b2"><span className="i-bulle-ic bleu"><Truck size={15} /></span><span><b>En route</b><small>Livraison à Cocody</small></span></div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function UniversPlateforme({ categories, choisir }) {
+  const ouvrir = (u) => choisir(categories.find((k) => u.mots.some((m) => norm(k).includes(norm(m)))) || "");
+  return (
+    <section className="v-section i-univers">
+      <div className="v-section-tete"><h2>Explorez nos univers</h2></div>
+      <div className="i-univers-liste">
+        {UNIVERS.map((u) => (
+          <button key={u.nom} className="i-univers-carte" onClick={() => ouvrir(u)}>
+            <img src={u.img} alt="" loading="lazy" />
+            <span><b>{u.nom}</b><small>{u.texte}</small></span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function EtapesCommande() {
+  return (
+    <section className="v-section i-etapes">
+      <div className="i-etapes-media">
+        <img src={PHOTOS.livraison} alt="Un livreur à moto apporte une commande" loading="lazy" />
+        <div className="i-bulle i-b3"><span className="i-bulle-ic vert"><PackageCheck size={15} /></span><span><b>Colis livré</b><small>Payé à la livraison</small></span></div>
+      </div>
+      <div>
+        <span className="i-surtitre">Simple et sûr</span>
+        <h2>Commandez en trois étapes</h2>
+        <ol className="i-etapes-liste">
+          <li><span className="i-n">1</span><span><b>Choisissez vos produits</b>Ajoutez-les au panier, depuis votre téléphone.</span></li>
+          <li><span className="i-n">2</span><span><b>Payez comme vous voulez</b>Mobile Money ou en espèces à la livraison.</span></li>
+          <li><span className="i-n">3</span><span><b>Recevez et suivez</b>Ticket de caisse et suivi de la livraison en direct.</span></li>
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+function AppelVendeurs() {
+  return (
+    <section className="v-section">
+      <div className="i-vendeurs">
+        <div className="i-vendeurs-texte">
+          <span className="i-surtitre clair">Vous vendez ?</span>
+          <h2>Ouvrez votre boutique sur {PLATEFORME}</h2>
+          <p>Vos produits en ligne, vos ventes, vos stocks, vos tickets de caisse et vos livraisons, au même endroit. Vos clients paient par Mobile Money ou à la livraison.</p>
+          <a className="i-btn i-btn-blanc" href="/admin/?creer=1">Créer ma boutique<ArrowRight size={18} /></a>
+        </div>
+        <img src={PHOTOS.creatrices} alt="Deux créatrices dans leur boutique de mode" loading="lazy" />
+      </div>
+    </section>
+  );
+}
+
 function PageAccueil({ slug }) {
   const { config, boutiques, recherche, setRecherche, ...reste } = useBoutique();
   // Page d'une boutique : uniquement ses produits ; accueil : ceux de tous les administrateurs
@@ -328,6 +425,14 @@ function PageAccueil({ slug }) {
   const categories = [...new Set(produits.map((p) => p.categorie).filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr"));
   const b = config.boutique;
   const promos = produits.filter((p) => p.remise > 0 && p.disponible);
+  const garanties = (
+    <>
+      <div><Truck size={20} /><span><b>Livraison</b>{slug ? <>{config.livraison.frais ? ` ${fmt(config.livraison.frais)}` : " offerte"}{config.livraison.gratuite_des > 0 ? `, offerte dès ${fmt(config.livraison.gratuite_des)}` : ""}</> : " à domicile, selon la boutique"}</span></div>
+      <div><Smartphone size={20} /><span><b>Mobile Money</b> Orange, MTN, Moov, Wave</span></div>
+      <div><Banknote size={20} /><span><b>Paiement à la livraison</b> en espèces</span></div>
+      <div><Receipt size={20} /><span><b>Ticket de caisse</b> téléchargeable</span></div>
+    </>
+  );
 
   if (slug && config.plateforme) {
     return <div className="v-section"><div className="empty"><div className="empty-icon"><Store size={26} /></div><h3>Boutique introuvable</h3><p>Cette adresse ne correspond à aucune boutique.</p><a className="btn btn-primary" href="#/">Voir toutes les boutiques</a></div></div>;
@@ -335,7 +440,14 @@ function PageAccueil({ slug }) {
 
   return (
     <>
-      {!recherche && (
+      {!recherche && !slug && (
+        <>
+          <HeroPlateforme nbBoutiques={avecProduits.length} versProduits={() => catalogueRef.current?.scrollIntoView({ behavior: "smooth" })} />
+          <div className="v-garanties i-garanties">{garanties}</div>
+          <UniversPlateforme categories={categories} choisir={(k) => { setCat(k); catalogueRef.current?.scrollIntoView({ behavior: "smooth" }); }} />
+        </>
+      )}
+      {!recherche && slug && (
         <section className="v-hero">
           <div className="v-hero-in">
             {slug ? <a className="v-retour" href="#/"><ArrowLeft size={16} />Toutes les boutiques</a> : null}
@@ -349,12 +461,7 @@ function PageAccueil({ slug }) {
               {b.whatsapp && <a className="btn btn-secondary btn-lg" href={`https://wa.me/${telInternational(b.whatsapp)}`} target="_blank" rel="noopener"><MessageSquare size={16} /><span>Nous écrire</span></a>}
             </div>
           </div>
-          <div className="v-garanties">
-            <div><Truck size={20} /><span><b>Livraison</b>{slug ? <>{config.livraison.frais ? ` ${fmt(config.livraison.frais)}` : " offerte"}{config.livraison.gratuite_des > 0 ? `, offerte dès ${fmt(config.livraison.gratuite_des)}` : ""}</> : " à domicile, selon la boutique"}</span></div>
-            <div><Smartphone size={20} /><span><b>Mobile Money</b> Orange, MTN, Moov, Wave</span></div>
-            <div><Banknote size={20} /><span><b>Paiement à la livraison</b> en espèces</span></div>
-            <div><Receipt size={20} /><span><b>Ticket de caisse</b> téléchargeable</span></div>
-          </div>
+          <div className="v-garanties">{garanties}</div>
         </section>
       )}
 
@@ -408,6 +515,7 @@ function PageAccueil({ slug }) {
         )}
       </section>
       {slug && config.contact && !recherche && <ContactBoutique slug={slug} nomBoutique={b.nom} />}
+      {!slug && !recherche && <><EtapesCommande /><AppelVendeurs /></>}
     </>
   );
 }
