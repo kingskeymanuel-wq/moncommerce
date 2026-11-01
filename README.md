@@ -1,4 +1,4 @@
-# Ivoire Shop — plateforme de boutiques en ligne + administration
+# VENDRE+ — plateforme de boutiques en ligne + administration
 
 Une plateforme, plusieurs espaces :
 

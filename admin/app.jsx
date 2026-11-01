@@ -16,7 +16,7 @@ import {
 import { lignesTicket, telechargerTicketPdf, urlTicketPdf, pdfIntegrable, telInternational, genererQr, cheminQr, lienTicket, fichierTicketPdf, partagePdfPossible, base64TicketPdf } from "../partage/ticket.js";
 
 /* =====================================================================
-   Ivoire Shop — administration de boutique (style Shopify)
+   VENDRE+ — administration de boutique (style Shopify)
    ===================================================================== */
 
 /* ---------- Constantes métier ---------- */
@@ -1248,7 +1248,7 @@ function Topbar({ onMenu }) {
   return (
     <header className="topbar">
       <button className="topbar-icon only-mobile" onClick={onMenu} aria-label="Ouvrir le menu"><Menu size={20} /></button>
-      <a className="brand" href="#/accueil"><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span><span className="brand-name">Ivoire Shop</span></a>
+      <a className="brand" href="#/accueil"><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span><span className="brand-name">VENDRE+</span></a>
       <button className="topbar-search" onClick={openCmdk}><Search size={16} /><span>Rechercher</span><kbd>{isMac ? "⌘ K" : "Ctrl K"}</kbd></button>
       <div className="topbar-right">
         <button className="topbar-icon only-mobile" onClick={openCmdk} aria-label="Rechercher"><Search size={19} /></button>
@@ -1305,7 +1305,7 @@ function SidebarNav({ onNavigate }) {
       })}
       <div className="nav-spacer" />
       <a href="#/parametres" className={cx("nav-item", route.page === "parametres" && "active")} onClick={onNavigate}><Settings size={18} /><span>Paramètres</span></a>
-      <div className="nav-foot">Ivoire Shop · v8.0</div>
+      <div className="nav-foot">VENDRE+ · v8.0</div>
     </nav>
   );
 }
@@ -1717,6 +1717,7 @@ function EnvoiTicketModal({ open, onClose, t, cmd, marquer }) {
 const ACTIONS_TICKET = {
   genere: "généré", imprime: "imprimé", pdf: "PDF", whatsapp: "WhatsApp", sms: "SMS", email: "e-mail",
   lien: "lien copié", consulte_client: "consulté par le client", historique: "vente antérieure",
+  non_remis: "fermé sans remise (administrateur)",
 };
 const REMISE_TICKET = new Set(["imprime", "pdf", "whatsapp", "sms", "email", "consulte_client", "historique"]);
 
@@ -1785,10 +1786,11 @@ function SaleModal({ open, preset, onClose }) {
     setPay(paiementVide()); setErr({}); setDone(null); setSaving(false); setApercu(false);
   };
   useEffect(() => { if (open) reinitialiser(); }, [open]);
-  // Nouvelle vente en une touche, même si le ticket n'est pas encore remis : il reste dans « Tickets »
-  const venteSuivante = (ticketRemis, numeroTicket) => {
-    if (!ticketRemis) toast({ title: `Ticket ${numeroTicket || ""} à remettre au client`, desc: "Retrouvez-le dans Tickets pour l'imprimer ou l'envoyer." });
-    reinitialiser(true);
+  // Traçabilité : pas de vente suivante tant que le ticket n'est pas remis ; l'administrateur peut passer outre, c'est journalisé
+  const fermerSansTicket = async (cmdId) => {
+    if (!confirm("Fermer cette vente sans remettre le ticket au client ? Ce sera inscrit à votre nom dans le journal des tickets.")) return;
+    const r = await sync(["POST", `/api/commandes/${cmdId}/ticket`, { action: "non_remis" }]);
+    if (r) { update((d) => ({ ...d, tickets: [...(d.tickets || []), { id: uid(), commandeId: cmdId, action: "non_remis", auteurId: d.moi || null, date: new Date().toISOString() }] })); onClose(); }
   };
 
   // Client reconnu à son numéro : on travaille avec le téléphone
@@ -1900,11 +1902,11 @@ function SaleModal({ open, preset, onClose }) {
             </div>
           )}
           <div className="row" style={{ flexWrap: "wrap", justifyContent: "center" }}>
-            <Btn variant="brand" size="lg" icon={Plus} onClick={() => venteSuivante(remis, cmdFinale?.numeroTicket)}>Nouvelle vente</Btn>
+            <Btn variant="brand" size="lg" icon={Plus} disabled={!remis} title={remis ? undefined : "Remettez d'abord le ticket au client"} onClick={() => reinitialiser(true)}>Nouvelle vente</Btn>
             <Btn disabled={!remis} onClick={() => { onClose(); go("commandes", done.cmdId); }}>Voir la commande</Btn>
             <Btn onClick={fermer} disabled={!remis}>Fermer</Btn>
           </div>
-          {!remis && estAdmin && <button type="button" className="link" style={{ marginTop: 8 }} onClick={onClose}>Fermer sans remettre le ticket (administrateur)</button>}
+          {!remis && estAdmin && <button type="button" className="link" style={{ marginTop: 8 }} onClick={() => fermerSansTicket(done.cmdId)}>Fermer sans remettre le ticket (administrateur, noté au journal)</button>}
         </div>
       </Modal>
     );
@@ -3839,7 +3841,7 @@ function PageTickets({ route }) {
                     <td className="right num strong">{fmt(c.total)}</td>
                     <td>{c.remis
                       ? <><Badge tone="success" dot>Remis</Badge><div className="cell-sub">{c.modes.filter((a) => REMISE_TICKET.has(a)).map((a) => ACTIONS_TICKET[a]).join(", ")}</div></>
-                      : c.statut === "annulee" ? <Badge>Annulée</Badge> : <Badge tone="critical" dot>Non remis</Badge>}</td>
+                      : c.statut === "annulee" ? <Badge>Annulée</Badge> : <><Badge tone="critical" dot>Non remis</Badge>{c.modes.includes("non_remis") && <div className="cell-sub">Vente fermée sans ticket par un administrateur</div>}</>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -5920,7 +5922,7 @@ function PageParametres() {
   };
   const fileRef = useRef(null);
   const exporter = () => {
-    downloadFile(`ivoire-shop-sauvegarde-${isoDate(new Date())}.json`, JSON.stringify(data, null, 2), "application/json");
+    downloadFile(`vendre-plus-sauvegarde-${isoDate(new Date())}.json`, JSON.stringify(data, null, 2), "application/json");
     toast({ title: "Sauvegarde téléchargée" });
   };
   const importer = (e) => {
@@ -5935,7 +5937,7 @@ function PageParametres() {
         if (!(await confirm({ title: "Restaurer cette sauvegarde ?", message: `Vos données actuelles seront remplacées par celles du fichier « ${file.name} » (${parsed.clients.length} clients, ${parsed.ventes.length} ventes).`, confirmLabel: "Restaurer" }))) return;
         if (await remplacerTout(migrate(parsed))) toast({ title: "Données restaurées" });
       } catch {
-        toast({ title: "Fichier invalide", desc: "Choisissez une sauvegarde Ivoire Shop (.json).", tone: "critical" });
+        toast({ title: "Fichier invalide", desc: "Choisissez une sauvegarde VENDRE+ (.json).", tone: "critical" });
       }
     };
     reader.readAsText(file);
@@ -6130,7 +6132,7 @@ function AuthScreen({ onSuccess, mode }) {
   return (
     <div className="auth">
       <div className="auth-hero">
-        <a className="brand" style={{ width: "auto" }} href="/"><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span>Ivoire Shop</a>
+        <a className="brand" style={{ width: "auto" }} href="/"><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span>VENDRE+</a>
         <div>
           <h1>Votre espace, <em>vos règles.</em></h1>
           <p>Chaque administrateur dispose de son propre espace : ses produits, ses stocks, ses clients, ses finances et ses vendeurs. Les produits publiés apparaissent sur la page d'accueil de la plateforme.</p>
@@ -6150,7 +6152,7 @@ function AuthScreen({ onSuccess, mode }) {
       <div className="auth-side">
         <div className="card auth-card">
           <div className="card-body">
-            <div className="auth-logo"><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span>Ivoire Shop</div>
+            <div className="auth-logo"><span className="brand-mark"><ShoppingBag size={16} strokeWidth={2.4} /></span>VENDRE+</div>
             <form onSubmit={valider} className="stack" key={etape} style={{ animation: "fadeUp .35s var(--ease-out)" }}>
               {inscription ? (
                 <>
@@ -6543,7 +6545,7 @@ function Splash({ texte }) {
   return (
     <div className="splash">
       <span className="brand-mark splash-mark"><ShoppingBag size={22} strokeWidth={2.4} /></span>
-      <div className="strong">Ivoire Shop</div>
+      <div className="strong">VENDRE+</div>
       <div className="row subtle"><span className="spinner" style={{ width: 14, height: 14 }} />{texte}</div>
     </div>
   );
@@ -6557,7 +6559,7 @@ function ServeurIntrouvable({ onRetry, onDemo }) {
         <div className="card-body stack">
           <div className="row" style={{ gap: 12 }}>
             <span className="todo-icon tint-3" style={{ width: 44, height: 44, borderRadius: 12 }}><AlertTriangle size={22} /></span>
-            <div><h2 style={{ fontSize: 18, fontWeight: 700 }}>Serveur introuvable</h2><p className="muted">L'API Ivoire Shop ne répond pas.</p></div>
+            <div><h2 style={{ fontSize: 18, fontWeight: 700 }}>Serveur introuvable</h2><p className="muted">L'API VENDRE+ ne répond pas.</p></div>
           </div>
           <p className="muted" style={{ fontSize: 13.5 }}>
             Démarrez le serveur depuis le dossier <b>backend</b> avec <code>npm start</code>, puis ouvrez <b>http://localhost:4000</b>.

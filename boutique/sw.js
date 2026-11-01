@@ -1,4 +1,4 @@
-/* Ivoire Shop — service worker : rend l'application installable et affiche une page claire quand il n'y a pas d'Internet.
+/* VENDRE+ — service worker : rend l'application installable et affiche une page claire quand il n'y a pas d'Internet.
    Rien n'est gardé en cache à part cette page : les commandes, les stocks et les prix viennent toujours du serveur. */
 const CACHE = "ivoire-v2"; // v2 : page hors ligne sans script en ligne
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/hors-ligne.html", "/icones/icone-192.png"]))); self.skipWaiting(); });

@@ -89,7 +89,7 @@ app.use(
   rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { erreur: "Trop de tentatives, réessayez dans quelques minutes." } })
 );
 
-app.get("/api/sante", (req, res) => res.json({ statut: "ok", service: "Ivoire Shop API" }));
+app.get("/api/sante", (req, res) => res.json({ statut: "ok", service: "VENDRE+ API" }));
 
 // Authentification — publique
 app.use("/api/auth", authRoutes);
@@ -154,7 +154,7 @@ const { numeroterManquants } = require("./lib/tickets");
 require("./db").pourChaqueEspace(() => require("./db").transaction(numeroterManquants)());
 
 app.listen(PORT, () => {
-  console.log(`✅ Ivoire Shop démarré
+  console.log(`✅ VENDRE+ démarré
    Boutique client : http://localhost:${PORT}/
    Administration  : http://localhost:${PORT}/admin/`);
   if (!require("./lib/cinetpay").estConfigure()) console.log("   Paiement en ligne CinetPay : non configuré (CINETPAY_API_KEY / CINETPAY_API_PASSWORD)");
